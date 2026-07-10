@@ -97,7 +97,7 @@ SQL Editor.
 | `00003_vendors_and_materials_update.sql` | `vendors` stub, materials columns, `material_stock_summary` view | Applied ✓ |
 | `00004_seed_mdf_inventory.sql` | Seeds MDF inventory (idempotent, `on conflict do nothing`) | Applied ✓ |
 | `00005_sales_flow.sql` | `brands, customers, order_forms, order_form_items, orders, order_lines`, `next_order_number()`, order RLS | Applied ✓ |
-| `00006_tighten_erp_rls.sql` | RLS audit fixes (see below) | Applied ✓ |
+| `00006_tighten_erp_rls.sql` | RLS audit fixes (see below) | Applied ✓ (file committed in cloud session — reconstructed from this doc to match the live DB) |
 
 Verified all 6 sales-flow + inventory tables plus views exist in the `erp` schema.
 `select erp.next_order_number()` returns sequential values (`A00001`, `A00002`, `A00003`…).
