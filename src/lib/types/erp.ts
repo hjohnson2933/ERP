@@ -205,5 +205,56 @@ export interface OrderLine {
   updated_at: string;
 }
 
-// Estimates still pending real exports from ProjectPAK.
-// export interface Estimate { ... }
+// ─── Estimates (quoting) ───────────────────────────────────────
+// An estimate is the priced quote that precedes an order. Lines are
+// free-form for custom furniture work, optionally referencing a catalog
+// item. When accepted, an estimate converts into an erp.orders row and
+// records the link via order_id.
+
+export type EstimateStatus =
+  | "draft"
+  | "sent"
+  | "accepted"
+  | "rejected"
+  | "expired";
+
+export const ESTIMATE_STATUS_LABELS: Record<EstimateStatus, string> = {
+  draft: "Draft",
+  sent: "Sent",
+  accepted: "Accepted",
+  rejected: "Rejected",
+  expired: "Expired",
+};
+
+export interface Estimate {
+  id: string;
+  estimate_number: string;         // generated: 'E' + digits (E00001)
+  status: EstimateStatus;
+  title: string;                   // project / description
+  customer_id: string | null;      // nullable FK to erp.customers (prospects allowed)
+  customer_name: string;           // snapshot / prospect name
+  contact_email: string;
+  contact_phone: string;
+  valid_until: string | null;
+  job_id: string | null;           // soft ref to public.jobs.id
+  order_id: string | null;         // set when converted to an order
+  notes: string;
+  created_by: string | null;       // soft ref to public.profiles.id
+  deleted_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EstimateLine {
+  id: string;
+  estimate_id: string;
+  order_form_item_id: string | null; // optional catalog reference
+  description: string;
+  quantity: number;
+  unit_price: number;
+  unit_cost: number | null;          // optional, for margin
+  line_total: number;                // generated: quantity * unit_price
+  position: number;
+  created_at: string;
+  updated_at: string;
+}

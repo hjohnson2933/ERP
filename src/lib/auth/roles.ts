@@ -42,6 +42,12 @@ export const canViewStockReservations = (r: Role | null | undefined) =>
 export const canManageOrders = (r: Role | null | undefined) =>
   r === "admin" || r === "pm";
 
+// Who can create and manage estimates (priced quotes that precede an
+// order). Same roles as orders for now, per ERP_ROLE_TABS. Mirrors
+// erp.can_manage_estimates() in the database — keep in sync.
+export const canManageEstimates = (r: Role | null | undefined) =>
+  r === "admin" || r === "pm";
+
 export const ERP_ROLE_TABS: Record<Role, string[]> = {
   admin: ["dashboard", "jobs", "orders", "customers", "estimates", "materials"],
   pm: ["dashboard", "jobs", "orders", "customers", "estimates", "materials"],
