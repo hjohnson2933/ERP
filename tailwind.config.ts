@@ -21,9 +21,9 @@ const config: Config = {
         },
         // Burnt-orange accent for primary actions, logo, active nav.
         accent: {
-          DEFAULT: "#e6733f",
-          hover: "#d3612f",
-          soft: "#f7e6dc",
+          DEFAULT: "#c05621",
+          hover: "#a4491a",
+          soft: "#f1ddce",
         },
         status: {
           hold: "#b03434",
