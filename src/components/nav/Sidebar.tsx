@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { Role } from "@/lib/auth/roles";
 import { ERP_ROLE_TABS, ERP_TAB_LABELS, ROLE_LABELS } from "@/lib/auth/roles";
+import { TabIcon } from "@/components/nav/icons";
 
 function hrefFor(tab: string) {
   return tab === "dashboard" ? "/dashboard" : `/dashboard/${tab}`;
@@ -50,10 +51,11 @@ export function Sidebar({
                 href={href}
                 className={
                   active
-                    ? "block rounded-md border-l-[3px] border-accent bg-white px-3 py-2 text-sm font-medium text-ink-text"
-                    : "block rounded-md border-l-[3px] border-transparent px-3 py-2 text-sm text-nav-muted hover:bg-white/5 hover:text-white"
+                    ? "flex items-center gap-3 rounded-md border-l-[3px] border-accent bg-white px-3 py-2 text-sm font-semibold text-ink-text"
+                    : "flex items-center gap-3 rounded-md border-l-[3px] border-transparent px-3 py-2 text-sm font-medium text-nav-muted hover:bg-white/5 hover:text-white"
                 }
               >
+                <TabIcon name={tab} className={active ? "text-accent" : "text-current"} />
                 {ERP_TAB_LABELS[tab] ?? tab}
               </Link>
             </li>

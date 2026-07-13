@@ -14,16 +14,16 @@ const config: Config = {
         },
         // Dark chrome (sidebar + top bar), mirroring the Mill List.
         nav: {
-          DEFAULT: "#2f3d56",
-          dark: "#26314a",
-          hover: "#3a4a67",
-          muted: "#9aa6ba",
+          DEFAULT: "#37465f",
+          dark: "#2c3a52",
+          hover: "#44546f",
+          muted: "#a5b0c3",
         },
         // Burnt-orange accent for primary actions, logo, active nav.
         accent: {
-          DEFAULT: "#e0663a",
-          hover: "#c9572e",
-          soft: "#f6e3d8",
+          DEFAULT: "#e6733f",
+          hover: "#d3612f",
+          soft: "#f7e6dc",
         },
         status: {
           hold: "#b03434",
