@@ -47,7 +47,7 @@ export default async function CustomersPage() {
         {canManage && (
           <Link
             href="/dashboard/customers/new"
-            className="rounded bg-status-ready px-3 py-1.5 text-sm font-medium text-white"
+            className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover"
           >
             New customer
           </Link>
@@ -81,7 +81,7 @@ export default async function CustomersPage() {
                   <td className="px-3 py-2 text-right">
                     <Link
                       href={`/dashboard/customers/${c.id}/edit`}
-                      className="text-status-ready hover:underline"
+                      className="text-accent hover:underline"
                     >
                       Edit
                     </Link>

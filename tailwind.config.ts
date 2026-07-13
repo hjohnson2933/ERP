@@ -12,6 +12,19 @@ const config: Config = {
           text: "#2b2620",
           muted: "#8a7d66",
         },
+        // Dark chrome (sidebar + top bar), mirroring the Mill List.
+        nav: {
+          DEFAULT: "#2f3d56",
+          dark: "#26314a",
+          hover: "#3a4a67",
+          muted: "#9aa6ba",
+        },
+        // Burnt-orange accent for primary actions, logo, active nav.
+        accent: {
+          DEFAULT: "#e0663a",
+          hover: "#c9572e",
+          soft: "#f6e3d8",
+        },
         status: {
           hold: "#b03434",
           partial: "#b07a1e",

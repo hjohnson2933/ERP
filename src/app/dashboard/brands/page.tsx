@@ -36,7 +36,7 @@ export default async function BrandsPage() {
         {canManage && (
           <Link
             href="/dashboard/brands/new"
-            className="rounded bg-status-ready px-3 py-1.5 text-sm font-medium text-white"
+            className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover"
           >
             New brand
           </Link>
@@ -62,7 +62,7 @@ export default async function BrandsPage() {
                   <td className="px-3 py-2 text-right">
                     <Link
                       href={`/dashboard/brands/${b.id}/edit`}
-                      className="text-status-ready hover:underline"
+                      className="text-accent hover:underline"
                     >
                       Edit
                     </Link>

@@ -8,7 +8,7 @@ import type { Customer, Brand } from "@/lib/types/erp";
 type BrandOption = Pick<Brand, "id" | "name">;
 
 const field =
-  "w-full rounded border border-ink-border bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-status-ready";
+  "w-full rounded border border-ink-border bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent";
 const label = "mb-1 block text-sm text-ink-muted";
 
 export function CustomerForm({
@@ -152,7 +152,7 @@ export function CustomerForm({
         <button
           type="submit"
           disabled={saving}
-          className="rounded bg-status-ready px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+          className="rounded bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-60"
         >
           {saving ? "Saving…" : editing ? "Save changes" : "Create customer"}
         </button>

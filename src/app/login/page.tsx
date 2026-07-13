@@ -43,7 +43,7 @@ export default function LoginPage() {
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="mb-4 w-full rounded border border-ink-border bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-status-ready"
+          className="mb-4 w-full rounded border border-ink-border bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent"
         />
 
         <label className="mb-1 block text-sm text-ink-muted">Password</label>
@@ -52,7 +52,7 @@ export default function LoginPage() {
           required
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="mb-4 w-full rounded border border-ink-border bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-status-ready"
+          className="mb-4 w-full rounded border border-ink-border bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent"
         />
 
         {error && <p className="mb-4 text-sm text-status-hold">{error}</p>}
@@ -60,7 +60,7 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded bg-status-ready px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
+          className="w-full rounded bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-60"
         >
           {loading ? "Signing in…" : "Sign in"}
         </button>
