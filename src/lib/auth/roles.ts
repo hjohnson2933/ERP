@@ -49,8 +49,8 @@ export const canManageEstimates = (r: Role | null | undefined) =>
   r === "admin" || r === "pm";
 
 export const ERP_ROLE_TABS: Record<Role, string[]> = {
-  admin: ["dashboard", "jobs", "orders", "customers", "estimates", "materials"],
-  pm: ["dashboard", "jobs", "orders", "customers", "estimates", "materials"],
+  admin: ["dashboard", "jobs", "orders", "brands", "customers", "estimates", "materials"],
+  pm: ["dashboard", "jobs", "orders", "brands", "customers", "estimates", "materials"],
   prog: ["dashboard", "jobs"],
   cnc: ["dashboard", "jobs"],
   carpenter: ["dashboard"],
@@ -63,6 +63,7 @@ export const ERP_TAB_LABELS: Record<string, string> = {
   dashboard: "Dashboard",
   jobs: "Jobs",
   orders: "Orders",
+  brands: "Brands",
   customers: "Customers",
   estimates: "Estimates",
   materials: "Materials",
