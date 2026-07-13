@@ -8,9 +8,10 @@ import type { EstimateStatus } from "@/lib/types/erp";
 import type { Profile } from "@/lib/types/shared";
 
 export interface EstimateLineInput {
+  material_id: string | null;   // set => pull live price from the material
   description: string;
   quantity: number;
-  unit_price: number;
+  unit_price: number | null;    // required for custom lines; ignored (stored NULL) for material lines
   unit_cost: number | null;
 }
 
@@ -46,11 +47,14 @@ export async function saveEstimate(input: EstimateInput): Promise<SaveResult> {
   }
 
   // An estimate needs at least one line, and something to identify it by.
+  // Material-linked lines (material_id set) store a NULL price and take the
+  // material's current price live; custom lines must carry their own price.
   const lines = input.lines
     .map((l) => ({
+      material_id: l.material_id,
       description: l.description.trim(),
       quantity: l.quantity,
-      unit_price: l.unit_price,
+      unit_price: l.material_id ? null : l.unit_price,
       unit_cost: l.unit_cost,
     }))
     .filter((l) => l.description !== "");
@@ -62,7 +66,7 @@ export async function saveEstimate(input: EstimateInput): Promise<SaveResult> {
     if (!Number.isFinite(l.quantity) || l.quantity <= 0) {
       return { ok: false, error: `Quantity must be greater than 0 (line: "${l.description}").` };
     }
-    if (!Number.isFinite(l.unit_price) || l.unit_price < 0) {
+    if (!l.material_id && (l.unit_price == null || !Number.isFinite(l.unit_price) || l.unit_price < 0)) {
       return { ok: false, error: `Unit price must be 0 or more (line: "${l.description}").` };
     }
   }
@@ -102,6 +106,7 @@ export async function saveEstimate(input: EstimateInput): Promise<SaveResult> {
 
   const lineRows = lines.map((l, i) => ({
     estimate_id: estimateId,
+    material_id: l.material_id,
     description: l.description,
     quantity: l.quantity,
     unit_price: l.unit_price,

@@ -1,33 +1,57 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { saveEstimate } from "@/app/dashboard/estimates/actions";
 import { ESTIMATE_STATUS_LABELS } from "@/lib/types/erp";
-import type { Estimate, EstimateLine, EstimateStatus, Customer } from "@/lib/types/erp";
+import type { Estimate, EstimateLineDetail, EstimateStatus, Customer } from "@/lib/types/erp";
 
 type CustomerOption = Pick<Customer, "id" | "name">;
+export type MaterialOption = {
+  id: string;
+  sku: string;
+  name: string;
+  default_unit_cost: number | null;
+  unit_of_measure: string;
+};
 
 const field =
   "w-full rounded border border-ink-border bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent";
 const label = "mb-1 block text-sm text-ink-muted";
 
 // Lines are held as strings while editing (controlled inputs), parsed on save.
-type LineRow = { description: string; quantity: string; unit_price: string; unit_cost: string };
+// material_id set => the line is pulled from a material (live price, read-only).
+type LineRow = {
+  material_id: string | null;
+  sku: string | null;
+  description: string;
+  quantity: string;
+  unit_price: string;
+  unit_cost: string;
+};
 
-const emptyLine = (): LineRow => ({ description: "", quantity: "1", unit_price: "", unit_cost: "" });
+const emptyCustomLine = (): LineRow => ({
+  material_id: null,
+  sku: null,
+  description: "",
+  quantity: "1",
+  unit_price: "",
+  unit_cost: "",
+});
 
 const currency = (n: number) =>
   n.toLocaleString(undefined, { style: "currency", currency: "USD" });
 
 export function EstimateForm({
   customers,
+  materials,
   estimate,
   lines: initialLines,
 }: {
   customers: CustomerOption[];
+  materials: MaterialOption[];
   estimate?: Estimate;
-  lines?: EstimateLine[];
+  lines?: EstimateLineDetail[];
 }) {
   const router = useRouter();
   const editing = Boolean(estimate);
@@ -46,14 +70,17 @@ export function EstimateForm({
   const [lines, setLines] = useState<LineRow[]>(
     initialLines && initialLines.length > 0
       ? initialLines.map((l) => ({
+          material_id: l.material_id,
+          sku: l.sku,
           description: l.description,
           quantity: String(l.quantity),
           unit_price: String(l.unit_price),
           unit_cost: l.unit_cost == null ? "" : String(l.unit_cost),
         }))
-      : [emptyLine()]
+      : []
   );
 
+  const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -65,9 +92,34 @@ export function EstimateForm({
   const setLine = (i: number, key: keyof LineRow, value: string) =>
     setLines((rows) => rows.map((r, idx) => (idx === i ? { ...r, [key]: value } : r)));
 
-  const addLine = () => setLines((rows) => [...rows, emptyLine()]);
-  const removeLine = (i: number) =>
-    setLines((rows) => (rows.length === 1 ? rows : rows.filter((_, idx) => idx !== i)));
+  const removeLine = (i: number) => setLines((rows) => rows.filter((_, idx) => idx !== i));
+
+  const addCustomLine = () => setLines((rows) => [...rows, emptyCustomLine()]);
+
+  const addMaterialLine = (m: MaterialOption) => {
+    setLines((rows) => [
+      ...rows,
+      {
+        material_id: m.id,
+        sku: m.sku,
+        description: m.name,
+        quantity: "1",
+        unit_price: String(m.default_unit_cost ?? 0),
+        unit_cost: "",
+      },
+    ]);
+    setSearch("");
+  };
+
+  // Client-side material search (internal catalog is modest; swap for a
+  // server search action if it ever gets large).
+  const matches = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return [];
+    return materials
+      .filter((m) => m.name.toLowerCase().includes(q) || m.sku.toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [search, materials]);
 
   const lineTotal = (r: LineRow) => (parseFloat(r.quantity) || 0) * (parseFloat(r.unit_price) || 0);
   const grandTotal = lines.reduce((sum, r) => sum + lineTotal(r), 0);
@@ -88,9 +140,10 @@ export function EstimateForm({
       valid_until: header.valid_until || null,
       notes: header.notes,
       lines: lines.map((r) => ({
+        material_id: r.material_id,
         description: r.description,
         quantity: parseFloat(r.quantity) || 0,
-        unit_price: parseFloat(r.unit_price) || 0,
+        unit_price: r.material_id ? null : parseFloat(r.unit_price) || 0,
         unit_cost: r.unit_cost.trim() === "" ? null : parseFloat(r.unit_cost) || 0,
       })),
     });
@@ -163,6 +216,38 @@ export function EstimateForm({
       {/* Line items */}
       <div className="mt-8">
         <h2 className="mb-2 text-sm font-semibold text-ink-text">Line items</h2>
+
+        {/* Material search */}
+        <div className="relative mb-3 max-w-md">
+          <input
+            className={field}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search materials by name or SKU to add…"
+          />
+          {matches.length > 0 && (
+            <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded border border-ink-border bg-white shadow-lg">
+              {matches.map((m) => (
+                <li key={m.id}>
+                  <button
+                    type="button"
+                    onClick={() => addMaterialLine(m)}
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-ink-bg"
+                  >
+                    <span>
+                      <span className="font-medium text-ink-text">{m.name}</span>{" "}
+                      <span className="font-mono text-xs text-ink-muted">{m.sku}</span>
+                    </span>
+                    <span className="tabular-nums text-ink-muted">
+                      {m.default_unit_cost == null ? "—" : currency(m.default_unit_cost)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
         <div className="overflow-x-auto rounded border border-ink-border bg-ink-surface">
           <table className="w-full text-sm">
             <thead>
@@ -176,62 +261,100 @@ export function EstimateForm({
               </tr>
             </thead>
             <tbody>
-              {lines.map((r, i) => (
-                <tr key={i} className="border-b border-ink-border last:border-0">
-                  <td className="px-2 py-1.5">
-                    <input
-                      className={field}
-                      value={r.description}
-                      onChange={(e) => setLine(i, "description", e.target.value)}
-                      placeholder="Item description"
-                    />
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <input
-                      className={`${field} text-right`}
-                      inputMode="decimal"
-                      value={r.quantity}
-                      onChange={(e) => setLine(i, "quantity", e.target.value)}
-                    />
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <input
-                      className={`${field} text-right`}
-                      inputMode="decimal"
-                      value={r.unit_price}
-                      onChange={(e) => setLine(i, "unit_price", e.target.value)}
-                      placeholder="0.00"
-                    />
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <input
-                      className={`${field} text-right`}
-                      inputMode="decimal"
-                      value={r.unit_cost}
-                      onChange={(e) => setLine(i, "unit_cost", e.target.value)}
-                      placeholder="—"
-                    />
-                  </td>
-                  <td className="px-3 py-1.5 text-right tabular-nums">{currency(lineTotal(r))}</td>
-                  <td className="px-2 py-1.5 text-center">
-                    <button
-                      type="button"
-                      onClick={() => removeLine(i)}
-                      disabled={lines.length === 1}
-                      className="text-ink-muted hover:text-status-hold disabled:opacity-30"
-                      aria-label="Remove line"
-                    >
-                      ✕
-                    </button>
+              {lines.map((r, i) => {
+                const custom = r.material_id == null;
+                return (
+                  <tr
+                    key={i}
+                    className={
+                      custom
+                        ? "border-b border-ink-border bg-status-partial/5 last:border-0"
+                        : "border-b border-ink-border last:border-0"
+                    }
+                  >
+                    <td className="px-2 py-1.5">
+                      {custom ? (
+                        <div>
+                          <input
+                            className={field}
+                            value={r.description}
+                            onChange={(e) => setLine(i, "description", e.target.value)}
+                            placeholder="Custom item description"
+                          />
+                          <span className="mt-1 inline-block rounded bg-status-partial/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-status-partial">
+                            Non-stock
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="px-1">
+                          <div className="font-medium text-ink-text">{r.description}</div>
+                          <div className="font-mono text-xs text-ink-muted">{r.sku}</div>
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <input
+                        className={`${field} text-right`}
+                        inputMode="decimal"
+                        value={r.quantity}
+                        onChange={(e) => setLine(i, "quantity", e.target.value)}
+                      />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      {custom ? (
+                        <input
+                          className={`${field} text-right`}
+                          inputMode="decimal"
+                          value={r.unit_price}
+                          onChange={(e) => setLine(i, "unit_price", e.target.value)}
+                          placeholder="0.00"
+                        />
+                      ) : (
+                        <div className="px-2 text-right tabular-nums text-ink-text" title="Live price from Materials">
+                          {currency(parseFloat(r.unit_price) || 0)}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5">
+                      {custom ? (
+                        <input
+                          className={`${field} text-right`}
+                          inputMode="decimal"
+                          value={r.unit_cost}
+                          onChange={(e) => setLine(i, "unit_cost", e.target.value)}
+                          placeholder="—"
+                        />
+                      ) : (
+                        <div className="px-2 text-right text-ink-muted">—</div>
+                      )}
+                    </td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{currency(lineTotal(r))}</td>
+                    <td className="px-2 py-1.5 text-center">
+                      <button
+                        type="button"
+                        onClick={() => removeLine(i)}
+                        className="text-ink-muted hover:text-status-hold"
+                        aria-label="Remove line"
+                      >
+                        ✕
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+              {lines.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-3 py-6 text-center text-ink-muted">
+                    Search materials above, or add a custom line below.
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
             <tfoot>
               <tr className="border-t border-ink-border">
                 <td className="px-3 py-2" colSpan={4}>
-                  <button type="button" onClick={addLine} className="text-sm font-medium text-accent hover:underline">
-                    + Add line
+                  <button type="button" onClick={addCustomLine} className="text-sm font-medium text-accent hover:underline">
+                    + Add custom (non-stock) line
                   </button>
                 </td>
                 <td className="px-3 py-2 text-right font-semibold tabular-nums">{currency(grandTotal)}</td>
@@ -240,6 +363,10 @@ export function EstimateForm({
             </tfoot>
           </table>
         </div>
+        <p className="mt-2 text-xs text-ink-muted">
+          Prices on material lines are pulled live from the Materials section and update
+          automatically when a material is repriced. Non-stock lines are highlighted.
+        </p>
       </div>
 
       <div className="mt-6">

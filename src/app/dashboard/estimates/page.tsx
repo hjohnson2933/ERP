@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { erpSchema } from "@/lib/supabase/erp-client";
 import { canManageEstimates } from "@/lib/auth/roles";
 import { ESTIMATE_STATUS_LABELS } from "@/lib/types/erp";
-import type { Estimate, EstimateLine, Customer } from "@/lib/types/erp";
+import type { Estimate, EstimateLineDetail, Customer } from "@/lib/types/erp";
 import type { Profile } from "@/lib/types/shared";
 
 export default async function EstimatesPage() {
@@ -28,9 +28,9 @@ export default async function EstimatesPage() {
       .limit(50)
       .returns<Pick<Estimate, "id" | "estimate_number" | "title" | "status" | "customer_id" | "customer_name" | "valid_until" | "order_id" | "created_at">[]>(),
     erp
-      .from("estimate_lines")
+      .from("estimate_line_details")
       .select("estimate_id, line_total")
-      .returns<Pick<EstimateLine, "estimate_id" | "line_total">[]>(),
+      .returns<Pick<EstimateLineDetail, "estimate_id" | "line_total">[]>(),
     erp
       .from("customers")
       .select("id, name")

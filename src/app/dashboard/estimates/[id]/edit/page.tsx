@@ -3,8 +3,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { erpSchema } from "@/lib/supabase/erp-client";
 import { canManageEstimates } from "@/lib/auth/roles";
-import { EstimateForm } from "@/components/estimates/EstimateForm";
-import type { Estimate, EstimateLine, Customer } from "@/lib/types/erp";
+import { EstimateForm, type MaterialOption } from "@/components/estimates/EstimateForm";
+import type { Estimate, EstimateLineDetail, Customer } from "@/lib/types/erp";
 import type { Profile } from "@/lib/types/shared";
 
 export default async function EditEstimatePage({ params }: { params: { id: string } }) {
@@ -20,23 +20,30 @@ export default async function EditEstimatePage({ params }: { params: { id: strin
   if (!canManageEstimates(profile?.role)) redirect("/dashboard/estimates");
 
   const erp = await erpSchema();
-  const [estimateRes, linesRes, customersRes] = await Promise.all([
+  const [estimateRes, linesRes, customersRes, materialsRes] = await Promise.all([
     erp.from("estimates").select("*").eq("id", params.id).is("deleted_at", null).maybeSingle<Estimate>(),
     erp
-      .from("estimate_lines")
+      .from("estimate_line_details")
       .select("*")
       .eq("estimate_id", params.id)
       .order("position", { ascending: true })
-      .returns<EstimateLine[]>(),
+      .returns<EstimateLineDetail[]>(),
     erp
       .from("customers")
       .select("id, name")
       .is("deleted_at", null)
       .order("name", { ascending: true })
       .returns<Pick<Customer, "id" | "name">[]>(),
+    erp
+      .from("materials")
+      .select("id, sku, name, default_unit_cost, unit_of_measure")
+      .is("deleted_at", null)
+      .eq("active", true)
+      .order("name", { ascending: true })
+      .returns<MaterialOption[]>(),
   ]);
 
-  const error = estimateRes.error || linesRes.error || customersRes.error;
+  const error = estimateRes.error || linesRes.error || customersRes.error || materialsRes.error;
   if (error) {
     return <p className="text-sm text-status-hold">Couldn&apos;t load estimate: {error.message}</p>;
   }
@@ -55,6 +62,7 @@ export default async function EditEstimatePage({ params }: { params: { id: strin
       </div>
       <EstimateForm
         customers={customersRes.data ?? []}
+        materials={materialsRes.data ?? []}
         estimate={estimateRes.data}
         lines={linesRes.data ?? []}
       />

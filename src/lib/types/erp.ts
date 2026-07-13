@@ -249,11 +249,29 @@ export interface EstimateLine {
   id: string;
   estimate_id: string;
   order_form_item_id: string | null; // optional catalog reference
+  material_id: string | null;        // set => pulled from erp.materials (live price)
   description: string;
   quantity: number;
-  unit_price: number;
+  unit_price: number | null;         // NULL for material lines (price derived live)
   unit_cost: number | null;          // optional, for margin
-  line_total: number;                // generated: quantity * unit_price
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// Shape of the erp.estimate_line_details view: estimate lines with the
+// effective (live for material-linked lines) price and computed total.
+export interface EstimateLineDetail {
+  id: string;
+  estimate_id: string;
+  material_id: string | null;
+  is_custom: boolean;        // true => non-stock / custom line
+  description: string;
+  sku: string | null;
+  quantity: number;
+  unit_price: number;        // effective price (material's current cost, or the custom price)
+  unit_cost: number | null;
+  line_total: number;        // quantity * unit_price
   position: number;
   created_at: string;
   updated_at: string;
