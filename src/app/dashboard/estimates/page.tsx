@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { erpSchema } from "@/lib/supabase/erp-client";
 import { canManageEstimates } from "@/lib/auth/roles";
@@ -66,9 +67,12 @@ export default async function EstimatesPage() {
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-xl font-semibold text-ink-text">Estimates</h1>
         {canManage && (
-          <span className="text-sm text-ink-muted">
-            Estimate builder coming next — estimates can be added via Supabase for now.
-          </span>
+          <Link
+            href="/dashboard/estimates/new"
+            className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover"
+          >
+            New estimate
+          </Link>
         )}
       </div>
       <div className="overflow-x-auto rounded border border-ink-border bg-ink-surface">
@@ -83,6 +87,7 @@ export default async function EstimatesPage() {
               <th className="px-3 py-2">Valid Until</th>
               <th className="px-3 py-2">Order</th>
               <th className="px-3 py-2">Created</th>
+              {canManage && <th className="px-3 py-2"></th>}
             </tr>
           </thead>
           <tbody>
@@ -100,11 +105,18 @@ export default async function EstimatesPage() {
                 <td className="px-3 py-2 text-ink-muted">
                   {new Date(e.created_at).toLocaleDateString()}
                 </td>
+                {canManage && (
+                  <td className="px-3 py-2 text-right">
+                    <Link href={`/dashboard/estimates/${e.id}/edit`} className="text-accent hover:underline">
+                      Edit
+                    </Link>
+                  </td>
+                )}
               </tr>
             ))}
             {estimates.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-3 py-6 text-center text-ink-muted">
+                <td colSpan={canManage ? 9 : 8} className="px-3 py-6 text-center text-ink-muted">
                   No estimates yet.
                 </td>
               </tr>
