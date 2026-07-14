@@ -55,8 +55,8 @@ export const canManageCatalog = (r: Role | null | undefined) =>
   r === "admin" || r === "pm";
 
 export const ERP_ROLE_TABS: Record<Role, string[]> = {
-  admin: ["dashboard", "jobs", "orders", "brands", "customers", "estimates", "materials"],
-  pm: ["dashboard", "jobs", "orders", "brands", "customers", "estimates", "materials"],
+  admin: ["dashboard", "jobs", "orders", "brands", "programs", "assemblies", "customers", "estimates", "materials"],
+  pm: ["dashboard", "jobs", "orders", "brands", "programs", "assemblies", "customers", "estimates", "materials"],
   prog: ["dashboard", "jobs"],
   cnc: ["dashboard", "jobs"],
   carpenter: ["dashboard"],
@@ -70,6 +70,8 @@ export const ERP_TAB_LABELS: Record<string, string> = {
   jobs: "Jobs",
   orders: "Orders",
   brands: "Brands",
+  programs: "Programs",
+  assemblies: "Assemblies",
   customers: "Customers",
   estimates: "Estimates",
   materials: "Materials",
