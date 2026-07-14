@@ -36,7 +36,9 @@ type BomRow = {
   label: string;
   sku: string | null;
   category: string;
-  unit_cost: number;
+  unit_cost: number;      // standard cost (material cost or sub-assembly roll-up)
+  cost_override: string;  // typed override when is_override
+  is_override: boolean;   // true => use cost_override instead of unit_cost
   quantity: string;
 };
 
@@ -70,6 +72,8 @@ export function AssemblyForm({
 
   const [rows, setRows] = useState<BomRow[]>(() =>
     (components ?? []).map((c) => {
+      const hasOverride = c.unit_cost_override != null;
+      const overrideStr = hasOverride ? String(c.unit_cost_override) : "";
       if (c.material_id) {
         const m = materialById.get(c.material_id);
         return {
@@ -79,6 +83,8 @@ export function AssemblyForm({
           sku: m?.sku ?? null,
           category: m?.category?.trim() || "Uncategorized",
           unit_cost: m?.default_unit_cost ?? 0,
+          cost_override: overrideStr,
+          is_override: hasOverride,
           quantity: String(c.quantity),
         };
       }
@@ -90,6 +96,8 @@ export function AssemblyForm({
         sku: a?.assembly_number ?? null,
         category: SUBASSEMBLY_GROUP,
         unit_cost: a?.unit_cost ?? 0,
+        cost_override: overrideStr,
+        is_override: hasOverride,
         quantity: String(c.quantity),
       };
     })
@@ -102,6 +110,10 @@ export function AssemblyForm({
 
   const setRowQty = (i: number, value: string) =>
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, quantity: value } : r)));
+  const setRowCost = (i: number, value: string) =>
+    setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, cost_override: value, is_override: true } : r)));
+  const resetRowCost = (i: number) =>
+    setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, cost_override: "", is_override: false } : r)));
   const removeRow = (i: number) => setRows((rs) => rs.filter((_, idx) => idx !== i));
 
   const addMaterial = (m: MaterialOption) => {
@@ -114,6 +126,8 @@ export function AssemblyForm({
         sku: m.sku,
         category: m.category?.trim() || "Uncategorized",
         unit_cost: m.default_unit_cost ?? 0,
+        cost_override: "",
+        is_override: false,
         quantity: "1",
       },
     ]);
@@ -129,6 +143,8 @@ export function AssemblyForm({
         sku: a.assembly_number,
         category: SUBASSEMBLY_GROUP,
         unit_cost: a.unit_cost,
+        cost_override: "",
+        is_override: false,
         quantity: "1",
       },
     ]);
@@ -156,7 +172,8 @@ export function AssemblyForm({
       .slice(0, 8);
   }, [subSearch, assemblies, assembly?.id]);
 
-  const rowTotal = (r: BomRow) => (parseFloat(r.quantity) || 0) * r.unit_cost;
+  const effectiveCost = (r: BomRow) => (r.is_override ? parseFloat(r.cost_override) || 0 : r.unit_cost);
+  const rowTotal = (r: BomRow) => (parseFloat(r.quantity) || 0) * effectiveCost(r);
   const grandTotal = rows.reduce((sum, r) => sum + rowTotal(r), 0);
 
   // Group rows by category for display while keeping their original index.
@@ -192,6 +209,7 @@ export function AssemblyForm({
         material_id: r.material_id,
         child_assembly_id: r.child_assembly_id,
         quantity: parseFloat(r.quantity) || 0,
+        unit_cost_override: r.is_override ? parseFloat(r.cost_override) || 0 : null,
       })),
     });
 
@@ -365,7 +383,28 @@ export function AssemblyForm({
                             onChange={(e) => setRowQty(index, e.target.value)}
                           />
                         </td>
-                        <td className="px-3 py-1.5 text-right tabular-nums text-ink-muted">{currency(row.unit_cost)}</td>
+                        <td className="px-2 py-1.5">
+                          <div className="flex items-center justify-end gap-1">
+                            <input
+                              className={`${field} text-right ${row.is_override ? "border-accent bg-accent-soft" : ""}`}
+                              inputMode="decimal"
+                              value={row.is_override ? row.cost_override : String(row.unit_cost)}
+                              onChange={(e) => setRowCost(index, e.target.value)}
+                              title={row.is_override ? `Overridden — standard ${currency(row.unit_cost)}` : "Standard cost"}
+                            />
+                            {row.is_override && (
+                              <button
+                                type="button"
+                                onClick={() => resetRowCost(index)}
+                                className="text-accent hover:text-accent-hover"
+                                title={`Reset to standard cost (${currency(row.unit_cost)})`}
+                                aria-label="Reset to standard cost"
+                              >
+                                ↺
+                              </button>
+                            )}
+                          </div>
+                        </td>
                         <td className="px-3 py-1.5 text-right tabular-nums">{currency(rowTotal(row))}</td>
                         <td className="px-2 py-1.5 text-center">
                           <button type="button" onClick={() => removeRow(index)} className="text-ink-muted hover:text-status-hold" aria-label="Remove">
@@ -397,8 +436,9 @@ export function AssemblyForm({
           </table>
         </div>
         <p className="mt-2 text-xs text-ink-muted">
-          Costs are pulled live from Materials (and rolled up through sub-assemblies). The
-          sell price is applied later as a markup on the estimate.
+          Costs are pulled live from Materials (and rolled up through sub-assemblies). Edit a
+          unit cost to override it — overridden cells are highlighted; click ↺ to reset to the
+          standard cost. The sell price is applied later as a markup on the estimate.
         </p>
       </div>
 

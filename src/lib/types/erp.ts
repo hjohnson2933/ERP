@@ -242,6 +242,7 @@ export interface AssemblyComponent {
   material_id: string | null;
   child_assembly_id: string | null;
   quantity: number;
+  unit_cost_override: number | null; // NULL => use the standard material/roll-up cost
   position: number;
   created_at: string;
   updated_at: string;

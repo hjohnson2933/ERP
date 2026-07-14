@@ -11,6 +11,7 @@ export interface AssemblyComponentInput {
   material_id: string | null;
   child_assembly_id: string | null;
   quantity: number;
+  unit_cost_override: number | null; // null => use standard cost
 }
 
 export interface AssemblyInput {
@@ -64,6 +65,9 @@ export async function saveAssembly(input: AssemblyInput): Promise<SaveResult> {
     if (c.child_assembly_id && c.child_assembly_id === input.id) {
       return { ok: false, error: "An assembly can't contain itself." };
     }
+    if (c.unit_cost_override != null && (!Number.isFinite(c.unit_cost_override) || c.unit_cost_override < 0)) {
+      return { ok: false, error: "A cost override must be 0 or more." };
+    }
   }
 
   const header = {
@@ -95,6 +99,7 @@ export async function saveAssembly(input: AssemblyInput): Promise<SaveResult> {
     material_id: c.material_id,
     child_assembly_id: c.child_assembly_id,
     quantity: c.quantity,
+    unit_cost_override: c.unit_cost_override,
     position: i,
   }));
   const compRes = await erp.from("assembly_components").insert(rows);
