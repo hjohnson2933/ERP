@@ -10,6 +10,7 @@ import type { Profile } from "@/lib/types/shared";
 // (dealerships) belong to a brand, and order forms are priced per brand.
 export interface BrandInput {
   id?: string; // present => update, absent => create
+  brand_code: string; // "Brand ID" in the UI
   name: string;
   notes: string;
   active: boolean;
@@ -37,6 +38,7 @@ export async function saveBrand(input: BrandInput): Promise<SaveResult> {
   if (!name) return { ok: false, error: "Brand name is required." };
 
   const payload = {
+    brand_code: input.brand_code.trim(),
     name,
     notes: input.notes.trim(),
     active: input.active,

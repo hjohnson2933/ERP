@@ -88,6 +88,7 @@ export interface StockMovement {
 
 export interface Brand {
   id: string;
+  brand_code: string; // human-assigned "Brand ID" shown in the UI
   name: string;
   notes: string;
   active: boolean;

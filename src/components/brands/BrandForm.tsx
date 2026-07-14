@@ -14,6 +14,7 @@ export function BrandForm({ brand }: { brand?: Brand }) {
   const editing = Boolean(brand);
 
   const [form, setForm] = useState({
+    brand_code: brand?.brand_code ?? "",
     name: brand?.name ?? "",
     notes: brand?.notes ?? "",
     active: brand?.active ?? true,
@@ -47,6 +48,15 @@ export function BrandForm({ brand }: { brand?: Brand }) {
           required
           value={form.name}
           onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+        />
+      </div>
+
+      <div className="mb-4">
+        <label className={label}>Brand ID</label>
+        <input
+          className={field}
+          value={form.brand_code}
+          onChange={(e) => setForm((f) => ({ ...f, brand_code: e.target.value }))}
         />
       </div>
 
