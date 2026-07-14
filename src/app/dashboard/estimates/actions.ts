@@ -120,3 +120,60 @@ export async function saveEstimate(input: EstimateInput): Promise<SaveResult> {
   revalidatePath("/dashboard/estimates");
   return { ok: true, id: estimateId };
 }
+
+export type ActionResult = { ok: true } | { ok: false; error: string };
+
+async function requireEstimateManager() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in." as const };
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single<Pick<Profile, "role">>();
+  if (!canManageEstimates(profile?.role)) return { error: "You don't have permission to manage estimates." as const };
+  return { error: null };
+}
+
+// Lock the estimate's current pricing into a snapshot. Used for both the
+// initial submit and later re-prices (label distinguishes them). Submit
+// also advances the status to "sent".
+async function lockEstimate(id: string, label: string, alsoSetSent: boolean): Promise<ActionResult> {
+  const guard = await requireEstimateManager();
+  if (guard.error) return { ok: false, error: guard.error };
+
+  const erp = await erpSchema();
+  const { error } = await erp.rpc("lock_estimate", { p_estimate_id: id, p_label: label });
+  if (error) return { ok: false, error: error.message };
+
+  if (alsoSetSent) {
+    const upd = await erp.from("estimates").update({ status: "sent" }).eq("id", id);
+    if (upd.error) return { ok: false, error: upd.error.message };
+  }
+
+  revalidatePath("/dashboard/estimates");
+  revalidatePath(`/dashboard/estimates/${id}/edit`);
+  return { ok: true };
+}
+
+export async function submitEstimate(id: string): Promise<ActionResult> {
+  return lockEstimate(id, "Submitted", true);
+}
+
+export async function repriceEstimate(id: string): Promise<ActionResult> {
+  return lockEstimate(id, "Re-price", false);
+}
+
+export async function unlockEstimate(id: string): Promise<ActionResult> {
+  const guard = await requireEstimateManager();
+  if (guard.error) return { ok: false, error: guard.error };
+
+  const erp = await erpSchema();
+  const { error } = await erp.from("estimates").update({ locked_snapshot_id: null }).eq("id", id);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/dashboard/estimates");
+  revalidatePath(`/dashboard/estimates/${id}/edit`);
+  return { ok: true };
+}

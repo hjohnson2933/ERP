@@ -294,6 +294,7 @@ export interface Estimate {
   job_id: string | null;           // soft ref to public.jobs.id
   order_id: string | null;         // set when converted to an order
   markup_pct: number;              // estimate-wide default markup % on fixture cost
+  locked_snapshot_id: string | null; // set => pricing is locked to this snapshot
   notes: string;
   created_by: string | null;       // soft ref to public.profiles.id
   deleted_at: string | null;
@@ -340,4 +341,36 @@ export interface EstimateLineDetail {
   position: number;
   created_at: string;
   updated_at: string;
+}
+
+// A frozen copy of an estimate's pricing at submit / re-price time.
+export interface EstimateSnapshot {
+  id: string;
+  estimate_id: string;
+  label: string;
+  markup_pct: number;
+  total: number;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface EstimateSnapshotLine {
+  id: string;
+  snapshot_id: string;
+  kind: EstimateLineKind;
+  description: string;
+  sku: string | null;
+  quantity: number;
+  unit_cost: number | null;
+  markup_pct: number | null;
+  unit_price: number;
+  line_total: number;
+  position: number;
+}
+
+// Shape of the erp.estimate_totals view.
+export interface EstimateTotal {
+  estimate_id: string;
+  is_locked: boolean;
+  total: number;
 }

@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { erpSchema } from "@/lib/supabase/erp-client";
 import { canManageEstimates } from "@/lib/auth/roles";
 import { ESTIMATE_STATUS_LABELS } from "@/lib/types/erp";
-import type { Estimate, EstimateLineDetail, Customer } from "@/lib/types/erp";
+import type { Estimate, EstimateTotal, Customer } from "@/lib/types/erp";
 import type { Profile } from "@/lib/types/shared";
 
 export default async function EstimatesPage() {
@@ -19,7 +19,7 @@ export default async function EstimatesPage() {
   const canManage = canManageEstimates(profile?.role);
 
   const erp = await erpSchema();
-  const [estimatesRes, linesRes, customersRes] = await Promise.all([
+  const [estimatesRes, totalsRes, customersRes] = await Promise.all([
     erp
       .from("estimates")
       .select("id, estimate_number, title, status, customer_id, customer_name, valid_until, order_id, created_at")
@@ -28,9 +28,9 @@ export default async function EstimatesPage() {
       .limit(50)
       .returns<Pick<Estimate, "id" | "estimate_number" | "title" | "status" | "customer_id" | "customer_name" | "valid_until" | "order_id" | "created_at">[]>(),
     erp
-      .from("estimate_line_details")
-      .select("estimate_id, line_total")
-      .returns<Pick<EstimateLineDetail, "estimate_id" | "line_total">[]>(),
+      .from("estimate_totals")
+      .select("estimate_id, is_locked, total")
+      .returns<EstimateTotal[]>(),
     erp
       .from("customers")
       .select("id, name")
@@ -38,19 +38,21 @@ export default async function EstimatesPage() {
       .returns<Pick<Customer, "id" | "name">[]>(),
   ]);
 
-  const error = estimatesRes.error || linesRes.error || customersRes.error;
+  const error = estimatesRes.error || totalsRes.error || customersRes.error;
   if (error) {
     return <p className="text-sm text-status-hold">Couldn&apos;t load estimates: {error.message}</p>;
   }
 
   const estimates = estimatesRes.data ?? [];
-  const lines = linesRes.data ?? [];
+  const totals = totalsRes.data ?? [];
   const customers = customersRes.data ?? [];
 
-  // Sum each estimate's line totals for a quick header figure.
+  // Effective total (locked snapshot or live) + lock state per estimate.
   const totalByEstimate = new Map<string, number>();
-  for (const l of lines) {
-    totalByEstimate.set(l.estimate_id, (totalByEstimate.get(l.estimate_id) ?? 0) + Number(l.line_total));
+  const lockedByEstimate = new Map<string, boolean>();
+  for (const t of totals) {
+    totalByEstimate.set(t.estimate_id, Number(t.total));
+    lockedByEstimate.set(t.estimate_id, t.is_locked);
   }
 
   const currency = (n: number) =>
@@ -96,7 +98,14 @@ export default async function EstimatesPage() {
                 <td className="px-3 py-2 font-mono text-xs">{e.estimate_number}</td>
                 <td className="px-3 py-2">{e.title || "—"}</td>
                 <td className="px-3 py-2">{displayCustomer(e)}</td>
-                <td className="px-3 py-2">{ESTIMATE_STATUS_LABELS[e.status]}</td>
+                <td className="px-3 py-2">
+                  {ESTIMATE_STATUS_LABELS[e.status]}
+                  {lockedByEstimate.get(e.id) && (
+                    <span className="ml-2 rounded-full bg-accent-soft px-2 py-0.5 text-[10px] font-medium uppercase text-accent">
+                      Locked
+                    </span>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-right">{currency(totalByEstimate.get(e.id) ?? 0)}</td>
                 <td className="px-3 py-2 text-ink-muted">
                   {e.valid_until ? new Date(e.valid_until).toLocaleDateString() : "—"}
@@ -108,7 +117,7 @@ export default async function EstimatesPage() {
                 {canManage && (
                   <td className="px-3 py-2 text-right">
                     <Link href={`/dashboard/estimates/${e.id}/edit`} className="text-accent hover:underline">
-                      Edit
+                      {lockedByEstimate.get(e.id) ? "View" : "Edit"}
                     </Link>
                   </td>
                 )}
