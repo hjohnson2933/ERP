@@ -3,7 +3,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { erpSchema } from "@/lib/supabase/erp-client";
 import { canManageEstimates } from "@/lib/auth/roles";
-import { EstimateForm, type MaterialOption } from "@/components/estimates/EstimateForm";
+import { EstimateForm, type FixtureOption } from "@/components/estimates/EstimateForm";
 import type { Customer } from "@/lib/types/erp";
 import type { Profile } from "@/lib/types/shared";
 
@@ -20,7 +20,7 @@ export default async function NewEstimatePage() {
   if (!canManageEstimates(profile?.role)) redirect("/dashboard/estimates");
 
   const erp = await erpSchema();
-  const [customersRes, materialsRes] = await Promise.all([
+  const [customersRes, fixturesRes] = await Promise.all([
     erp
       .from("customers")
       .select("id, name")
@@ -28,15 +28,15 @@ export default async function NewEstimatePage() {
       .order("name", { ascending: true })
       .returns<Pick<Customer, "id" | "name">[]>(),
     erp
-      .from("materials")
-      .select("id, sku, name, default_unit_cost, unit_of_measure")
-      .is("deleted_at", null)
+      .from("assembly_costs")
+      .select("assembly_id, name, assembly_number, unit_cost")
+      .eq("is_fixture", true)
       .eq("active", true)
       .order("name", { ascending: true })
-      .returns<MaterialOption[]>(),
+      .returns<FixtureOption[]>(),
   ]);
 
-  const error = customersRes.error || materialsRes.error;
+  const error = customersRes.error || fixturesRes.error;
   if (error) {
     return <p className="text-sm text-status-hold">Couldn&apos;t load data: {error.message}</p>;
   }
@@ -49,7 +49,7 @@ export default async function NewEstimatePage() {
         </Link>
         <h1 className="mt-1 text-xl font-semibold text-ink-text">New estimate</h1>
       </div>
-      <EstimateForm customers={customersRes.data ?? []} materials={materialsRes.data ?? []} />
+      <EstimateForm customers={customersRes.data ?? []} fixtures={fixturesRes.data ?? []} />
     </div>
   );
 }

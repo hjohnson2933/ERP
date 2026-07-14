@@ -292,6 +292,7 @@ export interface Estimate {
   valid_until: string | null;
   job_id: string | null;           // soft ref to public.jobs.id
   order_id: string | null;         // set when converted to an order
+  markup_pct: number;              // estimate-wide default markup % on fixture cost
   notes: string;
   created_by: string | null;       // soft ref to public.profiles.id
   deleted_at: string | null;
@@ -303,28 +304,37 @@ export interface EstimateLine {
   id: string;
   estimate_id: string;
   order_form_item_id: string | null; // optional catalog reference
-  material_id: string | null;        // set => pulled from erp.materials (live price)
+  material_id: string | null;        // legacy: pulled from erp.materials (live price)
+  fixture_id: string | null;         // set => a fixture (price = rolled-up cost × markup)
   description: string;
   quantity: number;
-  unit_price: number | null;         // NULL for material lines (price derived live)
+  unit_price: number | null;         // custom sell price; NULL for fixture/material lines
   unit_cost: number | null;          // optional, for margin
+  markup_pct: number | null;         // per-line markup override (fixtures); NULL => inherit estimate default
   position: number;
   created_at: string;
   updated_at: string;
 }
 
+export type EstimateLineKind = "fixture" | "material" | "custom";
+
 // Shape of the erp.estimate_line_details view: estimate lines with the
-// effective (live for material-linked lines) price and computed total.
+// effective sell price (fixtures priced at rolled-up cost × markup) and
+// computed total.
 export interface EstimateLineDetail {
   id: string;
   estimate_id: string;
+  fixture_id: string | null;
   material_id: string | null;
-  is_custom: boolean;        // true => non-stock / custom line
+  kind: EstimateLineKind;
+  is_custom: boolean;
   description: string;
   sku: string | null;
   quantity: number;
-  unit_price: number;        // effective price (material's current cost, or the custom price)
-  unit_cost: number | null;
+  unit_price: number;        // effective sell price
+  unit_cost: number | null;  // underlying cost (fixtures/materials); null for custom
+  markup_pct: number | null; // effective markup applied (fixtures only)
+  markup_override: number | null; // raw per-line override (null => inherits estimate default)
   line_total: number;        // quantity * unit_price
   position: number;
   created_at: string;
