@@ -48,6 +48,12 @@ export const canManageOrders = (r: Role | null | undefined) =>
 export const canManageEstimates = (r: Role | null | undefined) =>
   r === "admin" || r === "pm";
 
+// Who can manage the product catalog: programs, assemblies, and fixtures
+// (the building blocks estimates draw from). Mirrors
+// erp.can_manage_catalog() in the database — keep in sync.
+export const canManageCatalog = (r: Role | null | undefined) =>
+  r === "admin" || r === "pm";
+
 export const ERP_ROLE_TABS: Record<Role, string[]> = {
   admin: ["dashboard", "jobs", "orders", "brands", "customers", "estimates", "materials"],
   pm: ["dashboard", "jobs", "orders", "brands", "customers", "estimates", "materials"],

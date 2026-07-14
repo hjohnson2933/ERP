@@ -205,6 +205,60 @@ export interface OrderLine {
   updated_at: string;
 }
 
+// ─── Product catalog: programs → fixtures/assemblies → BOM ─────
+// A program is a brand's set of active fixtures. A fixture is a finished
+// assembly. An assembly is built from a bill of materials of parts
+// (erp.materials) and/or child assemblies (sub-assemblies).
+
+export interface Program {
+  id: string;
+  brand_id: string;
+  name: string;
+  active: boolean;
+  notes: string;
+  deleted_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Assembly {
+  id: string;
+  name: string;
+  assembly_number: string | null;
+  is_fixture: boolean;
+  program_id: string | null;   // set only when is_fixture (one program per fixture)
+  description: string;
+  photo_path: string;
+  active: boolean;
+  deleted_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// One BOM line: either a material (part) or a child assembly (sub-assembly).
+export interface AssemblyComponent {
+  id: string;
+  parent_assembly_id: string;
+  material_id: string | null;
+  child_assembly_id: string | null;
+  quantity: number;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// Shape of the erp.assembly_costs view: an assembly with its current
+// rolled-up material cost.
+export interface AssemblyCost {
+  assembly_id: string;
+  name: string;
+  assembly_number: string | null;
+  is_fixture: boolean;
+  program_id: string | null;
+  active: boolean;
+  unit_cost: number;
+}
+
 // ─── Estimates (quoting) ───────────────────────────────────────
 // An estimate is the priced quote that precedes an order. Lines are
 // free-form for custom furniture work, optionally referencing a catalog
