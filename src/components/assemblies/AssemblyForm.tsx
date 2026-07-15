@@ -26,19 +26,22 @@ const field =
   "w-full rounded border border-ink-border bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent";
 const label = "mb-1 block text-sm text-ink-muted";
 const SUBASSEMBLY_GROUP = "Sub-assemblies";
+const CUSTOM_GROUP = "Custom / Non-stock";
 
 const currency = (n: number) =>
   n.toLocaleString(undefined, { style: "currency", currency: "USD" });
 
 type BomRow = {
+  kind: "material" | "assembly" | "custom";
   material_id: string | null;
   child_assembly_id: string | null;
-  label: string;
+  label: string;          // display name (material / sub-assembly)
   sku: string | null;
   category: string;
-  unit_cost: number;      // standard cost (material cost or sub-assembly roll-up)
-  cost_override: string;  // typed override when is_override
-  is_override: boolean;   // true => use cost_override instead of unit_cost
+  unit_cost: number;      // standard cost (material cost or sub-assembly roll-up); 0 for custom
+  cost_override: string;  // typed override (material/assembly) or the cost (custom)
+  is_override: boolean;   // true => use cost_override instead of unit_cost (always true for custom)
+  description: string;    // editable, for custom lines
   quantity: string;
 };
 
@@ -77,6 +80,7 @@ export function AssemblyForm({
       if (c.material_id) {
         const m = materialById.get(c.material_id);
         return {
+          kind: "material" as const,
           material_id: c.material_id,
           child_assembly_id: null,
           label: m?.name ?? "(material)",
@@ -85,19 +89,38 @@ export function AssemblyForm({
           unit_cost: m?.default_unit_cost ?? 0,
           cost_override: overrideStr,
           is_override: hasOverride,
+          description: "",
           quantity: String(c.quantity),
         };
       }
-      const a = c.child_assembly_id ? assemblyById.get(c.child_assembly_id) : undefined;
+      if (c.child_assembly_id) {
+        const a = assemblyById.get(c.child_assembly_id);
+        return {
+          kind: "assembly" as const,
+          material_id: null,
+          child_assembly_id: c.child_assembly_id,
+          label: a?.name ?? "(assembly)",
+          sku: a?.assembly_number ?? null,
+          category: SUBASSEMBLY_GROUP,
+          unit_cost: a?.unit_cost ?? 0,
+          cost_override: overrideStr,
+          is_override: hasOverride,
+          description: "",
+          quantity: String(c.quantity),
+        };
+      }
+      // custom (non-stock) line: cost lives in unit_cost_override.
       return {
+        kind: "custom" as const,
         material_id: null,
-        child_assembly_id: c.child_assembly_id,
-        label: a?.name ?? "(assembly)",
-        sku: a?.assembly_number ?? null,
-        category: SUBASSEMBLY_GROUP,
-        unit_cost: a?.unit_cost ?? 0,
+        child_assembly_id: null,
+        label: "",
+        sku: null,
+        category: CUSTOM_GROUP,
+        unit_cost: 0,
         cost_override: overrideStr,
-        is_override: hasOverride,
+        is_override: true,
+        description: c.description ?? "",
         quantity: String(c.quantity),
       };
     })
@@ -114,12 +137,15 @@ export function AssemblyForm({
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, cost_override: value, is_override: true } : r)));
   const resetRowCost = (i: number) =>
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, cost_override: "", is_override: false } : r)));
+  const setRowDesc = (i: number, value: string) =>
+    setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, description: value } : r)));
   const removeRow = (i: number) => setRows((rs) => rs.filter((_, idx) => idx !== i));
 
   const addMaterial = (m: MaterialOption) => {
     setRows((rs) => [
       ...rs,
       {
+        kind: "material",
         material_id: m.id,
         child_assembly_id: null,
         label: m.name,
@@ -128,15 +154,35 @@ export function AssemblyForm({
         unit_cost: m.default_unit_cost ?? 0,
         cost_override: "",
         is_override: false,
+        description: "",
         quantity: "1",
       },
     ]);
     setPartSearch("");
   };
+
+  const addCustom = () =>
+    setRows((rs) => [
+      ...rs,
+      {
+        kind: "custom",
+        material_id: null,
+        child_assembly_id: null,
+        label: "",
+        sku: null,
+        category: CUSTOM_GROUP,
+        unit_cost: 0,
+        cost_override: "",
+        is_override: true,
+        description: "",
+        quantity: "1",
+      },
+    ]);
   const addSubAssembly = (a: AssemblyOption) => {
     setRows((rs) => [
       ...rs,
       {
+        kind: "assembly",
         material_id: null,
         child_assembly_id: a.assembly_id,
         label: a.name,
@@ -145,6 +191,7 @@ export function AssemblyForm({
         unit_cost: a.unit_cost,
         cost_override: "",
         is_override: false,
+        description: "",
         quantity: "1",
       },
     ]);
@@ -184,11 +231,12 @@ export function AssemblyForm({
       arr.push({ row, index });
       map.set(row.category, arr);
     });
-    // Materials categories alphabetically, sub-assemblies last.
+    // Material categories alphabetically, then sub-assemblies, then custom.
+    const rank = (c: string) => (c === CUSTOM_GROUP ? 2 : c === SUBASSEMBLY_GROUP ? 1 : 0);
     return [...map.entries()].sort(([a], [b]) => {
-      if (a === SUBASSEMBLY_GROUP) return 1;
-      if (b === SUBASSEMBLY_GROUP) return -1;
-      return a.localeCompare(b);
+      const ra = rank(a);
+      const rb = rank(b);
+      return ra !== rb ? ra - rb : a.localeCompare(b);
     });
   }, [rows]);
 
@@ -208,6 +256,7 @@ export function AssemblyForm({
       components: rows.map((r) => ({
         material_id: r.material_id,
         child_assembly_id: r.child_assembly_id,
+        description: r.kind === "custom" ? r.description : null,
         quantity: parseFloat(r.quantity) || 0,
         unit_cost_override: r.is_override ? parseFloat(r.cost_override) || 0 : null,
       })),
@@ -369,62 +418,98 @@ export function AssemblyForm({
                       </td>
                       <td></td>
                     </tr>
-                    {entries.map(({ row, index }) => (
-                      <tr key={index} className="border-b border-ink-border last:border-0">
-                        <td className="px-3 py-1.5">
-                          <div className="font-medium text-ink-text">{row.label}</div>
-                          {row.sku && <div className="font-mono text-xs text-ink-muted">{row.sku}</div>}
-                        </td>
-                        <td className="px-2 py-1.5">
-                          <input
-                            className={`${field} text-right`}
-                            inputMode="decimal"
-                            value={row.quantity}
-                            onChange={(e) => setRowQty(index, e.target.value)}
-                          />
-                        </td>
-                        <td className="px-2 py-1.5">
-                          <div className="flex items-center justify-end gap-1">
-                            <input
-                              className={`${field} text-right ${row.is_override ? "border-accent bg-accent-soft" : ""}`}
-                              inputMode="decimal"
-                              value={row.is_override ? row.cost_override : String(row.unit_cost)}
-                              onChange={(e) => setRowCost(index, e.target.value)}
-                              title={row.is_override ? `Overridden — standard ${currency(row.unit_cost)}` : "Standard cost"}
-                            />
-                            {row.is_override && (
-                              <button
-                                type="button"
-                                onClick={() => resetRowCost(index)}
-                                className="text-accent hover:text-accent-hover"
-                                title={`Reset to standard cost (${currency(row.unit_cost)})`}
-                                aria-label="Reset to standard cost"
-                              >
-                                ↺
-                              </button>
+                    {entries.map(({ row, index }) => {
+                      const custom = row.kind === "custom";
+                      return (
+                        <tr key={index} className={custom ? "border-b border-ink-border bg-status-partial/5 last:border-0" : "border-b border-ink-border last:border-0"}>
+                          <td className="px-3 py-1.5">
+                            {custom ? (
+                              <div>
+                                <input
+                                  className={field}
+                                  value={row.description}
+                                  onChange={(e) => setRowDesc(index, e.target.value)}
+                                  placeholder="Custom item description"
+                                />
+                                <span className="mt-1 inline-block rounded bg-status-partial/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-status-partial">
+                                  Non-stock
+                                </span>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="font-medium text-ink-text">{row.label}</div>
+                                {row.sku && <div className="font-mono text-xs text-ink-muted">{row.sku}</div>}
+                              </>
                             )}
-                          </div>
-                        </td>
-                        <td className="px-3 py-1.5 text-right tabular-nums">{currency(rowTotal(row))}</td>
-                        <td className="px-2 py-1.5 text-center">
-                          <button type="button" onClick={() => removeRow(index)} className="text-ink-muted hover:text-status-hold" aria-label="Remove">
-                            ✕
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <input
+                              className={`${field} text-right`}
+                              inputMode="decimal"
+                              value={row.quantity}
+                              onChange={(e) => setRowQty(index, e.target.value)}
+                            />
+                          </td>
+                          <td className="px-2 py-1.5">
+                            {custom ? (
+                              <input
+                                className={`${field} text-right`}
+                                inputMode="decimal"
+                                value={row.cost_override}
+                                onChange={(e) => setRowCost(index, e.target.value)}
+                                placeholder="0.00"
+                              />
+                            ) : (
+                              <div className="flex items-center justify-end gap-1">
+                                <input
+                                  className={`${field} text-right ${row.is_override ? "border-accent bg-accent-soft" : ""}`}
+                                  inputMode="decimal"
+                                  value={row.is_override ? row.cost_override : String(row.unit_cost)}
+                                  onChange={(e) => setRowCost(index, e.target.value)}
+                                  title={row.is_override ? `Overridden — standard ${currency(row.unit_cost)}` : "Standard cost"}
+                                />
+                                {row.is_override && (
+                                  <button
+                                    type="button"
+                                    onClick={() => resetRowCost(index)}
+                                    className="text-accent hover:text-accent-hover"
+                                    title={`Reset to standard cost (${currency(row.unit_cost)})`}
+                                    aria-label="Reset to standard cost"
+                                  >
+                                    ↺
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-3 py-1.5 text-right tabular-nums">{currency(rowTotal(row))}</td>
+                          <td className="px-2 py-1.5 text-center">
+                            <button type="button" onClick={() => removeRow(index)} className="text-ink-muted hover:text-status-hold" aria-label="Remove">
+                              ✕
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </Fragment>
                 );
               })}
               {rows.length === 0 && (
                 <tr>
                   <td colSpan={5} className="px-3 py-6 text-center text-ink-muted">
-                    Search parts or sub-assemblies above to build the bill of materials.
+                    Search parts or sub-assemblies above, or add a custom line below.
                   </td>
                 </tr>
               )}
             </tbody>
             <tfoot>
+              <tr className="border-t border-ink-border">
+                <td className="px-3 py-2" colSpan={5}>
+                  <button type="button" onClick={addCustom} className="text-sm font-medium text-accent hover:underline">
+                    + Add custom (non-stock) line
+                  </button>
+                </td>
+              </tr>
               <tr className="border-t border-ink-border">
                 <td className="px-3 py-2 text-sm font-semibold text-ink-text" colSpan={3}>
                   Rolled-up material cost
@@ -437,8 +522,9 @@ export function AssemblyForm({
         </div>
         <p className="mt-2 text-xs text-ink-muted">
           Costs are pulled live from Materials (and rolled up through sub-assemblies). Edit a
-          unit cost to override it — overridden cells are highlighted; click ↺ to reset to the
-          standard cost. The sell price is applied later as a markup on the estimate.
+          unit cost to override it — overridden cells are highlighted light orange; click ↺ to
+          reset to the standard cost. Custom (non-stock) lines are highlighted and take the cost
+          you type. The sell price is applied later as a markup on the estimate.
         </p>
       </div>
 

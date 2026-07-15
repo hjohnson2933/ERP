@@ -10,8 +10,9 @@ import type { Profile } from "@/lib/types/shared";
 export interface AssemblyComponentInput {
   material_id: string | null;
   child_assembly_id: string | null;
+  description: string | null;        // set for custom (non-stock) lines
   quantity: number;
-  unit_cost_override: number | null; // null => use standard cost
+  unit_cost_override: number | null; // null => standard cost; for custom lines, the cost
 }
 
 export interface AssemblyInput {
@@ -50,13 +51,15 @@ export async function saveAssembly(input: AssemblyInput): Promise<SaveResult> {
     return { ok: false, error: "A fixture must be assigned to a program." };
   }
 
-  // Keep only rows with exactly one valid target.
+  // Keep material, sub-assembly, or custom (both refs null + description) lines.
   const components = input.components.filter(
     (c) =>
-      (c.material_id && !c.child_assembly_id) || (!c.material_id && c.child_assembly_id)
+      (c.material_id && !c.child_assembly_id) ||
+      (!c.material_id && c.child_assembly_id) ||
+      (!c.material_id && !c.child_assembly_id && (c.description ?? "").trim() !== "")
   );
   if (components.length === 0) {
-    return { ok: false, error: "Add at least one part or sub-assembly to the bill of materials." };
+    return { ok: false, error: "Add at least one part, sub-assembly, or custom line to the bill of materials." };
   }
   for (const c of components) {
     if (!Number.isFinite(c.quantity) || c.quantity <= 0) {
@@ -66,7 +69,7 @@ export async function saveAssembly(input: AssemblyInput): Promise<SaveResult> {
       return { ok: false, error: "An assembly can't contain itself." };
     }
     if (c.unit_cost_override != null && (!Number.isFinite(c.unit_cost_override) || c.unit_cost_override < 0)) {
-      return { ok: false, error: "A cost override must be 0 or more." };
+      return { ok: false, error: "A line cost must be 0 or more." };
     }
   }
 
@@ -94,14 +97,18 @@ export async function saveAssembly(input: AssemblyInput): Promise<SaveResult> {
     if (del.error) return { ok: false, error: del.error.message };
   }
 
-  const rows = components.map((c, i) => ({
-    parent_assembly_id: assemblyId,
-    material_id: c.material_id,
-    child_assembly_id: c.child_assembly_id,
-    quantity: c.quantity,
-    unit_cost_override: c.unit_cost_override,
-    position: i,
-  }));
+  const rows = components.map((c, i) => {
+    const isCustom = !c.material_id && !c.child_assembly_id;
+    return {
+      parent_assembly_id: assemblyId,
+      material_id: c.material_id,
+      child_assembly_id: c.child_assembly_id,
+      description: isCustom ? (c.description ?? "").trim() : null,
+      quantity: c.quantity,
+      unit_cost_override: c.unit_cost_override,
+      position: i,
+    };
+  });
   const compRes = await erp.from("assembly_components").insert(rows);
   if (compRes.error) return { ok: false, error: compRes.error.message };
 

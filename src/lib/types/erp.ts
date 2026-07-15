@@ -236,14 +236,16 @@ export interface Assembly {
   updated_at: string;
 }
 
-// One BOM line: either a material (part) or a child assembly (sub-assembly).
+// One BOM line: a material (part), a child assembly (sub-assembly), or a
+// custom non-stock line (both refs null, description + cost set).
 export interface AssemblyComponent {
   id: string;
   parent_assembly_id: string;
   material_id: string | null;
   child_assembly_id: string | null;
+  description: string | null;        // set for custom (non-stock) lines
   quantity: number;
-  unit_cost_override: number | null; // NULL => use the standard material/roll-up cost
+  unit_cost_override: number | null; // NULL => standard cost; for custom lines this holds the cost
   position: number;
   created_at: string;
   updated_at: string;
