@@ -25,20 +25,19 @@
 -- Run after 00016.
 -- ════════════════════════════════════════════════════════════════
 
+-- This file is safe to re-run: every step is guarded, so it works
+-- whether or not an earlier attempt got part-way through.
+--
+-- Order matters. estimate_line_details reads estimates.markup_pct and
+-- estimate_lines.markup_pct, so those columns CANNOT be dropped while
+-- the view exists. The views come down first, then the columns, then
+-- the views go back up in their new shape.
+
 -- ─── Two markups on the estimate ───────────────────────────────
 alter table erp.estimates
   add column if not exists material_markup_pct numeric(6,3) not null default 0;
 alter table erp.estimates
   add column if not exists labor_markup_pct numeric(6,3) not null default 0;
-
--- Carry the existing markup onto BOTH components, so today's material
--- pricing is preserved exactly and labor starts marked up at the same
--- rate rather than silently selling at cost. Tune the labor rate per
--- estimate afterwards.
-update erp.estimates
-set material_markup_pct = markup_pct,
-    labor_markup_pct    = markup_pct
-where markup_pct is not null;
 
 -- ─── Two per-line markup overrides ─────────────────────────────
 alter table erp.estimate_lines
@@ -46,20 +45,46 @@ alter table erp.estimate_lines
 alter table erp.estimate_lines
   add column if not exists labor_markup_pct numeric(6,3);
 
-update erp.estimate_lines
-set material_markup_pct = markup_pct,
-    labor_markup_pct    = markup_pct
-where markup_pct is not null;
+-- ─── Carry the old single markup onto both components ──────────
+-- Today's material pricing is preserved exactly, and labor starts
+-- marked up at the same rate rather than silently selling at cost.
+-- Tune the labor rate per estimate afterwards.
+--
+-- Guarded on markup_pct still existing, so re-running this file after
+-- the column has already been dropped is a no-op rather than an error.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'erp' and table_name = 'estimates' and column_name = 'markup_pct'
+  ) then
+    update erp.estimates
+    set material_markup_pct = markup_pct,
+        labor_markup_pct    = markup_pct
+    where markup_pct is not null;
+  end if;
 
--- The single markup is fully replaced by the two above.
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'erp' and table_name = 'estimate_lines' and column_name = 'markup_pct'
+  ) then
+    update erp.estimate_lines
+    set material_markup_pct = markup_pct,
+        labor_markup_pct    = markup_pct
+    where markup_pct is not null;
+  end if;
+end $$;
+
+-- ─── Drop the dependent views BEFORE the columns they read ─────
+-- estimate_totals reads estimate_line_details, so it comes down first.
+drop view if exists erp.estimate_totals;
+drop view if exists erp.estimate_line_details;
+
+-- Now the single markup can be dropped: nothing depends on it.
 alter table erp.estimates      drop column if exists markup_pct;
 alter table erp.estimate_lines drop column if exists markup_pct;
 
 -- ─── Rebuild the pricing views ─────────────────────────────────
--- estimate_totals reads estimate_line_details, so it comes down first
--- and goes back up at the end.
-drop view if exists erp.estimate_totals;
-drop view if exists erp.estimate_line_details;
 
 create view erp.estimate_line_details
 with (security_invoker = true) as
@@ -163,16 +188,30 @@ alter table erp.estimate_snapshot_lines
 -- Existing snapshots are a frozen record of pricing that had NO labor in
 -- it: their whole cost was material, marked up at the single old rate.
 -- Backfilling labor as 0 keeps every historical total exactly as locked.
-update erp.estimate_snapshots
-set material_markup_pct = markup_pct,
-    labor_markup_pct    = 0
-where markup_pct is not null;
+-- Guarded so re-running this file is a no-op rather than an error.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'erp' and table_name = 'estimate_snapshots' and column_name = 'markup_pct'
+  ) then
+    update erp.estimate_snapshots
+    set material_markup_pct = markup_pct,
+        labor_markup_pct    = 0
+    where markup_pct is not null;
+  end if;
 
-update erp.estimate_snapshot_lines
-set material_cost       = unit_cost,
-    labor_cost          = 0,
-    material_markup_pct = markup_pct,
-    labor_markup_pct    = 0;
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'erp' and table_name = 'estimate_snapshot_lines' and column_name = 'markup_pct'
+  ) then
+    update erp.estimate_snapshot_lines
+    set material_cost       = unit_cost,
+        labor_cost          = 0,
+        material_markup_pct = markup_pct,
+        labor_markup_pct    = 0;
+  end if;
+end $$;
 
 alter table erp.estimate_snapshots      drop column if exists markup_pct;
 alter table erp.estimate_snapshot_lines drop column if exists markup_pct;
