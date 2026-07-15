@@ -54,6 +54,11 @@ export const canManageEstimates = (r: Role | null | undefined) =>
 export const canManageCatalog = (r: Role | null | undefined) =>
   r === "admin" || r === "pm";
 
+// Who can view/manage materials. Mirrors erp.can_view_materials() (which
+// backs the materials read/write RLS) — keep in sync.
+export const canManageMaterials = (r: Role | null | undefined) =>
+  r === "admin" || r === "pm" || r === "foreman" || r === "cnc_manager";
+
 export const ERP_ROLE_TABS: Record<Role, string[]> = {
   admin: ["dashboard", "jobs", "orders", "brands", "programs", "assemblies", "customers", "estimates", "materials"],
   pm: ["dashboard", "jobs", "orders", "brands", "programs", "assemblies", "customers", "estimates", "materials"],

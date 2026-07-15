@@ -33,6 +33,9 @@ export interface Material {
   reorder_point: number | null;
   default_location_id: string | null; // soft ref to erp.locations
   default_vendor_id: string | null;   // soft ref to erp.vendors
+  thickness: number | null;           // wood dimensions (null elsewhere)
+  width: number | null;
+  length: number | null;
   active: boolean;
   deleted_at: string | null;
   created_at: string;
@@ -55,6 +58,10 @@ export interface MaterialStockSummary {
   reorder_point: number | null;
   default_location_id: string | null;
   default_vendor_id: string | null;
+  active: boolean;
+  thickness: number | null;
+  width: number | null;
+  length: number | null;
   in_stock: number;
   on_hold: number;
   committed: number;
