@@ -15,6 +15,14 @@ export interface AssemblyComponentInput {
   unit_cost_override: number | null; // null => standard cost; for custom lines, the cost
 }
 
+// One labor line: a type from the rate table + hours. Cost is never sent
+// from the client — it is always hours × the type's current rate, resolved
+// in the database.
+export interface AssemblyLaborInput {
+  labor_type_id: string;
+  hours: number;
+}
+
 export interface AssemblyInput {
   id?: string;
   name: string;
@@ -24,6 +32,7 @@ export interface AssemblyInput {
   is_fixture: boolean;
   program_id: string | null;
   components: AssemblyComponentInput[];
+  labor: AssemblyLaborInput[];
 }
 
 export type SaveResult = { ok: true; id: string } | { ok: false; error: string };
@@ -73,6 +82,14 @@ export async function saveAssembly(input: AssemblyInput): Promise<SaveResult> {
     }
   }
 
+  // Labor is optional — an assembly can be material-only.
+  const labor = input.labor.filter((l) => l.labor_type_id);
+  for (const l of labor) {
+    if (!Number.isFinite(l.hours) || l.hours <= 0) {
+      return { ok: false, error: "Every labor line needs hours greater than 0." };
+    }
+  }
+
   const header = {
     name,
     assembly_number: input.assembly_number?.trim() || null,
@@ -91,10 +108,13 @@ export async function saveAssembly(input: AssemblyInput): Promise<SaveResult> {
   if (headerRes.error) return { ok: false, error: headerRes.error.message };
   const assemblyId = headerRes.data.id;
 
-  // Replace the BOM wholesale. The DB trigger rejects circular references.
+  // Replace the BOM and labor wholesale. The DB trigger rejects circular references.
   if (input.id) {
     const del = await erp.from("assembly_components").delete().eq("parent_assembly_id", assemblyId);
     if (del.error) return { ok: false, error: del.error.message };
+
+    const delLabor = await erp.from("assembly_labor").delete().eq("assembly_id", assemblyId);
+    if (delLabor.error) return { ok: false, error: delLabor.error.message };
   }
 
   const rows = components.map((c, i) => {
@@ -111,6 +131,17 @@ export async function saveAssembly(input: AssemblyInput): Promise<SaveResult> {
   });
   const compRes = await erp.from("assembly_components").insert(rows);
   if (compRes.error) return { ok: false, error: compRes.error.message };
+
+  if (labor.length > 0) {
+    const laborRows = labor.map((l, i) => ({
+      assembly_id: assemblyId,
+      labor_type_id: l.labor_type_id,
+      hours: l.hours,
+      position: i,
+    }));
+    const laborRes = await erp.from("assembly_labor").insert(laborRows);
+    if (laborRes.error) return { ok: false, error: laborRes.error.message };
+  }
 
   revalidatePath("/dashboard/assemblies");
   return { ok: true, id: assemblyId };

@@ -8,6 +8,7 @@ import {
   type MaterialOption,
   type AssemblyOption,
   type ProgramOption,
+  type LaborTypeOption,
 } from "@/components/assemblies/AssemblyForm";
 import type { Profile } from "@/lib/types/shared";
 
@@ -24,7 +25,7 @@ export default async function NewAssemblyPage() {
   if (!canManageCatalog(profile?.role)) redirect("/dashboard/assemblies");
 
   const erp = await erpSchema();
-  const [materialsRes, assembliesRes, programsRes] = await Promise.all([
+  const [materialsRes, assembliesRes, programsRes, laborTypesRes] = await Promise.all([
     erp
       .from("materials")
       .select("id, sku, name, category, default_unit_cost, unit_of_measure")
@@ -34,7 +35,7 @@ export default async function NewAssemblyPage() {
       .returns<MaterialOption[]>(),
     erp
       .from("assembly_costs")
-      .select("assembly_id, name, assembly_number, is_fixture, unit_cost")
+      .select("assembly_id, name, assembly_number, is_fixture, material_cost, labor_cost, labor_hours")
       .eq("active", true)
       .order("name", { ascending: true })
       .returns<AssemblyOption[]>(),
@@ -45,9 +46,16 @@ export default async function NewAssemblyPage() {
       .eq("active", true)
       .order("name", { ascending: true })
       .returns<ProgramOption[]>(),
+    erp
+      .from("labor_types")
+      .select("id, category, name, rate")
+      .eq("active", true)
+      .order("category", { ascending: true })
+      .order("position", { ascending: true })
+      .returns<LaborTypeOption[]>(),
   ]);
 
-  const error = materialsRes.error || assembliesRes.error || programsRes.error;
+  const error = materialsRes.error || assembliesRes.error || programsRes.error || laborTypesRes.error;
   if (error) {
     return <p className="text-sm text-status-hold">Couldn&apos;t load data: {error.message}</p>;
   }
@@ -64,6 +72,7 @@ export default async function NewAssemblyPage() {
         materials={materialsRes.data ?? []}
         assemblies={assembliesRes.data ?? []}
         programs={programsRes.data ?? []}
+        laborTypes={laborTypesRes.data ?? []}
       />
     </div>
   );

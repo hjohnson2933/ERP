@@ -3,7 +3,13 @@
 import { Fragment, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { saveAssembly } from "@/app/dashboard/assemblies/actions";
-import type { Assembly, AssemblyComponent } from "@/lib/types/erp";
+import {
+  LABOR_CATEGORY_LABELS,
+  type Assembly,
+  type AssemblyComponent,
+  type AssemblyLabor,
+  type LaborCategory,
+} from "@/lib/types/erp";
 
 export type MaterialOption = {
   id: string;
@@ -18,9 +24,17 @@ export type AssemblyOption = {
   name: string;
   assembly_number: string | null;
   is_fixture: boolean;
-  unit_cost: number;
+  material_cost: number;
+  labor_cost: number;
+  labor_hours: number;
 };
 export type ProgramOption = { id: string; name: string };
+export type LaborTypeOption = {
+  id: string;
+  category: LaborCategory;
+  name: string;
+  rate: number;
+};
 
 const field =
   "w-full rounded border border-ink-border bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent";
@@ -30,6 +44,8 @@ const CUSTOM_GROUP = "Custom / Non-stock";
 
 const currency = (n: number) =>
   n.toLocaleString(undefined, { style: "currency", currency: "USD" });
+const hoursFmt = (n: number) =>
+  `${n.toLocaleString(undefined, { maximumFractionDigits: 3 })} hr`;
 
 type BomRow = {
   kind: "material" | "assembly" | "custom";
@@ -45,24 +61,36 @@ type BomRow = {
   quantity: string;
 };
 
+// A labor line: a type from the rate table + hours. The rate is not
+// editable here — erp.labor_types is the single source of truth.
+type LaborRow = {
+  labor_type_id: string;
+  hours: string;
+};
+
 export function AssemblyForm({
   assembly,
   components,
+  labor,
   materials,
   assemblies,
   programs,
+  laborTypes,
 }: {
   assembly?: Assembly;
   components?: AssemblyComponent[];
+  labor?: AssemblyLabor[];
   materials: MaterialOption[];
   assemblies: AssemblyOption[];
   programs: ProgramOption[];
+  laborTypes: LaborTypeOption[];
 }) {
   const router = useRouter();
   const editing = Boolean(assembly);
 
   const materialById = useMemo(() => new Map(materials.map((m) => [m.id, m])), [materials]);
   const assemblyById = useMemo(() => new Map(assemblies.map((a) => [a.assembly_id, a])), [assemblies]);
+  const laborTypeById = useMemo(() => new Map(laborTypes.map((t) => [t.id, t])), [laborTypes]);
 
   const [header, setHeader] = useState({
     name: assembly?.name ?? "",
@@ -102,7 +130,7 @@ export function AssemblyForm({
           label: a?.name ?? "(assembly)",
           sku: a?.assembly_number ?? null,
           category: SUBASSEMBLY_GROUP,
-          unit_cost: a?.unit_cost ?? 0,
+          unit_cost: a?.material_cost ?? 0,
           cost_override: overrideStr,
           is_override: hasOverride,
           description: "",
@@ -126,8 +154,14 @@ export function AssemblyForm({
     })
   );
 
+  const [laborRows, setLaborRows] = useState<LaborRow[]>(() =>
+    (labor ?? []).map((l) => ({ labor_type_id: l.labor_type_id, hours: String(l.hours) }))
+  );
+
   const [partSearch, setPartSearch] = useState("");
   const [subSearch, setSubSearch] = useState("");
+  const [addCategory, setAddCategory] = useState<LaborCategory>("general");
+  const [addTypeId, setAddTypeId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -188,7 +222,7 @@ export function AssemblyForm({
         label: a.name,
         sku: a.assembly_number,
         category: SUBASSEMBLY_GROUP,
-        unit_cost: a.unit_cost,
+        unit_cost: a.material_cost,
         cost_override: "",
         is_override: false,
         description: "",
@@ -196,6 +230,15 @@ export function AssemblyForm({
       },
     ]);
     setSubSearch("");
+  };
+
+  const setLaborHours = (i: number, value: string) =>
+    setLaborRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, hours: value } : r)));
+  const removeLaborRow = (i: number) => setLaborRows((rs) => rs.filter((_, idx) => idx !== i));
+  const addLaborRow = () => {
+    if (!addTypeId) return;
+    setLaborRows((rs) => [...rs, { labor_type_id: addTypeId, hours: "1" }]);
+    setAddTypeId("");
   };
 
   const partMatches = useMemo(() => {
@@ -221,7 +264,57 @@ export function AssemblyForm({
 
   const effectiveCost = (r: BomRow) => (r.is_override ? parseFloat(r.cost_override) || 0 : r.unit_cost);
   const rowTotal = (r: BomRow) => (parseFloat(r.quantity) || 0) * effectiveCost(r);
-  const grandTotal = rows.reduce((sum, r) => sum + rowTotal(r), 0);
+  const materialTotal = rows.reduce((sum, r) => sum + rowTotal(r), 0);
+
+  // Labor cost mirrors erp.assembly_labor_cost(): this assembly's own
+  // labor, plus each sub-assembly's rolled-up labor × its BOM quantity. A
+  // BOM cost override replaces a sub-assembly's MATERIAL cost only, so its
+  // labor still rolls up here — same as the database.
+  const laborRate = (r: LaborRow) => laborTypeById.get(r.labor_type_id)?.rate ?? 0;
+  const laborRowHours = (r: LaborRow) => parseFloat(r.hours) || 0;
+  const laborRowCost = (r: LaborRow) => laborRowHours(r) * laborRate(r);
+
+  const ownLaborCost = laborRows.reduce((sum, r) => sum + laborRowCost(r), 0);
+  const ownLaborHours = laborRows.reduce((sum, r) => sum + laborRowHours(r), 0);
+
+  const subLabor = rows.reduce(
+    (acc, r) => {
+      if (r.kind !== "assembly" || !r.child_assembly_id) return acc;
+      const child = assemblyById.get(r.child_assembly_id);
+      if (!child) return acc;
+      const qty = parseFloat(r.quantity) || 0;
+      return {
+        cost: acc.cost + qty * child.labor_cost,
+        hours: acc.hours + qty * child.labor_hours,
+      };
+    },
+    { cost: 0, hours: 0 }
+  );
+
+  const laborTotal = ownLaborCost + subLabor.cost;
+  const laborHoursTotal = ownLaborHours + subLabor.hours;
+  const grandTotal = materialTotal + laborTotal;
+
+  // Rates seed at 0.00 and are set in Supabase, so flag labor that is
+  // being recorded in hours but costing nothing yet.
+  const hasUnratedLabor = laborRows.some((r) => r.labor_type_id && laborRate(r) === 0);
+
+  const laborGroups = useMemo(() => {
+    const order: LaborCategory[] = ["general", "fabrication"];
+    return order
+      .map((cat) => ({
+        category: cat,
+        entries: laborRows
+          .map((row, index) => ({ row, index }))
+          .filter(({ row }) => laborTypeById.get(row.labor_type_id)?.category === cat),
+      }))
+      .filter((g) => g.entries.length > 0);
+  }, [laborRows, laborTypeById]);
+
+  const addTypeChoices = useMemo(
+    () => laborTypes.filter((t) => t.category === addCategory),
+    [laborTypes, addCategory]
+  );
 
   // Group rows by category for display while keeping their original index.
   const groups = useMemo(() => {
@@ -259,6 +352,10 @@ export function AssemblyForm({
         description: r.kind === "custom" ? r.description : null,
         quantity: parseFloat(r.quantity) || 0,
         unit_cost_override: r.is_override ? parseFloat(r.cost_override) || 0 : null,
+      })),
+      labor: laborRows.map((r) => ({
+        labor_type_id: r.labor_type_id,
+        hours: parseFloat(r.hours) || 0,
       })),
     });
 
@@ -384,7 +481,9 @@ export function AssemblyForm({
                           <span className="font-mono text-xs text-ink-muted">{a.assembly_number}</span>
                         )}
                       </span>
-                      <span className="tabular-nums text-ink-muted">{currency(a.unit_cost)}</span>
+                      <span className="tabular-nums text-ink-muted">
+                        {currency(a.material_cost + a.labor_cost)}
+                      </span>
                     </button>
                   </li>
                 ))}
@@ -514,7 +613,7 @@ export function AssemblyForm({
                 <td className="px-3 py-2 text-sm font-semibold text-ink-text" colSpan={3}>
                   Rolled-up material cost
                 </td>
-                <td className="px-3 py-2 text-right font-semibold tabular-nums">{currency(grandTotal)}</td>
+                <td className="px-3 py-2 text-right font-semibold tabular-nums">{currency(materialTotal)}</td>
                 <td></td>
               </tr>
             </tfoot>
@@ -525,6 +624,188 @@ export function AssemblyForm({
           unit cost to override it — overridden cells are highlighted light orange; click ↺ to
           reset to the standard cost. Custom (non-stock) lines are highlighted and take the cost
           you type. The sell price is applied later as a markup on the estimate.
+        </p>
+      </div>
+
+      {/* Labor */}
+      <div className="mt-8">
+        <h2 className="mb-2 text-sm font-semibold text-ink-text">Labor</h2>
+
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <select
+            className={`${field} max-w-[12rem]`}
+            value={addCategory}
+            onChange={(e) => {
+              setAddCategory(e.target.value as LaborCategory);
+              setAddTypeId("");
+            }}
+            aria-label="Labor category"
+          >
+            {(Object.keys(LABOR_CATEGORY_LABELS) as LaborCategory[]).map((c) => (
+              <option key={c} value={c}>
+                {LABOR_CATEGORY_LABELS[c]}
+              </option>
+            ))}
+          </select>
+          <select
+            className={`${field} max-w-[14rem]`}
+            value={addTypeId}
+            onChange={(e) => setAddTypeId(e.target.value)}
+            aria-label="Labor type"
+          >
+            <option value="">Select a type…</option>
+            {addTypeChoices.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+                {t.rate > 0 ? ` — ${currency(t.rate)}/hr` : ""}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={addLaborRow}
+            disabled={!addTypeId}
+            className="rounded border border-accent px-3 py-2 text-sm font-medium text-accent hover:bg-accent-soft disabled:opacity-40"
+          >
+            + Add labor
+          </button>
+        </div>
+
+        <div className="overflow-x-auto rounded border border-ink-border bg-ink-surface">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-ink-border text-left text-ink-muted">
+                <th className="px-3 py-2">Type</th>
+                <th className="w-24 px-3 py-2 text-right">Hours</th>
+                <th className="w-32 px-3 py-2 text-right">Rate</th>
+                <th className="w-32 px-3 py-2 text-right">Cost</th>
+                <th className="w-10 px-3 py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {laborGroups.map(({ category, entries }) => {
+                const subtotal = entries.reduce((s, e) => s + laborRowCost(e.row), 0);
+                return (
+                  <Fragment key={`labor-${category}`}>
+                    <tr className="bg-ink-bg/60">
+                      <td colSpan={3} className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                        {LABOR_CATEGORY_LABELS[category]}
+                      </td>
+                      <td className="px-3 py-1.5 text-right text-xs font-medium text-ink-muted tabular-nums">
+                        {currency(subtotal)}
+                      </td>
+                      <td></td>
+                    </tr>
+                    {entries.map(({ row, index }) => {
+                      const type = laborTypeById.get(row.labor_type_id);
+                      return (
+                        <tr key={index} className="border-b border-ink-border last:border-0">
+                          <td className="px-3 py-1.5 font-medium text-ink-text">{type?.name ?? "(labor)"}</td>
+                          <td className="px-2 py-1.5">
+                            <input
+                              className={`${field} text-right`}
+                              inputMode="decimal"
+                              value={row.hours}
+                              onChange={(e) => setLaborHours(index, e.target.value)}
+                            />
+                          </td>
+                          <td className="px-3 py-1.5 text-right tabular-nums text-ink-muted">
+                            {laborRate(row) === 0 ? (
+                              <span title="No rate set for this labor type yet">—</span>
+                            ) : (
+                              `${currency(laborRate(row))}/hr`
+                            )}
+                          </td>
+                          <td className="px-3 py-1.5 text-right tabular-nums">{currency(laborRowCost(row))}</td>
+                          <td className="px-2 py-1.5 text-center">
+                            <button
+                              type="button"
+                              onClick={() => removeLaborRow(index)}
+                              className="text-ink-muted hover:text-status-hold"
+                              aria-label="Remove"
+                            >
+                              ✕
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </Fragment>
+                );
+              })}
+              {laborRows.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-3 py-6 text-center text-ink-muted">
+                    No labor yet — pick a category and type above to add hours.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+            <tfoot>
+              <tr className="border-t border-ink-border">
+                <td className="px-3 py-2 text-ink-muted" colSpan={2}>
+                  This assembly&apos;s labor
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums text-ink-muted">{hoursFmt(ownLaborHours)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{currency(ownLaborCost)}</td>
+                <td></td>
+              </tr>
+              {subLabor.cost > 0 || subLabor.hours > 0 ? (
+                <tr>
+                  <td className="px-3 py-2 text-ink-muted" colSpan={2}>
+                    Labor rolled up from sub-assemblies
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-ink-muted">{hoursFmt(subLabor.hours)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{currency(subLabor.cost)}</td>
+                  <td></td>
+                </tr>
+              ) : null}
+              <tr className="border-t border-ink-border">
+                <td className="px-3 py-2 text-sm font-semibold text-ink-text" colSpan={2}>
+                  Rolled-up labor cost
+                </td>
+                <td className="px-3 py-2 text-right font-semibold tabular-nums text-ink-muted">
+                  {hoursFmt(laborHoursTotal)}
+                </td>
+                <td className="px-3 py-2 text-right font-semibold tabular-nums">{currency(laborTotal)}</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        {hasUnratedLabor && (
+          <p className="mt-2 text-xs text-status-hold">
+            Some labor types have no hourly rate set yet, so they cost $0.00. The hours are still
+            recorded and will cost out as soon as the rates are entered.
+          </p>
+        )}
+        <p className="mt-2 text-xs text-ink-muted">
+          Labor cost is hours × the type&apos;s hourly rate, pulled live from the central rate
+          table — the rate can&apos;t be overridden on a line. Labor on a sub-assembly rolls up
+          into this assembly the same way material cost does.
+        </p>
+      </div>
+
+      {/* Cost summary */}
+      <div className="mt-8 rounded border border-ink-border bg-ink-surface p-4">
+        <h2 className="mb-3 text-sm font-semibold text-ink-text">Rolled-up cost</h2>
+        <dl className="space-y-1.5 text-sm">
+          <div className="flex items-center justify-between">
+            <dt className="text-ink-muted">Material</dt>
+            <dd className="tabular-nums">{currency(materialTotal)}</dd>
+          </div>
+          <div className="flex items-center justify-between">
+            <dt className="text-ink-muted">Labor</dt>
+            <dd className="tabular-nums">{currency(laborTotal)}</dd>
+          </div>
+          <div className="flex items-center justify-between border-t border-ink-border pt-1.5 font-semibold text-ink-text">
+            <dt>Total cost</dt>
+            <dd className="tabular-nums">{currency(grandTotal)}</dd>
+          </div>
+        </dl>
+        <p className="mt-3 text-xs text-ink-muted">
+          Material and labor are kept separate because an estimate marks each up at its own
+          percentage.
         </p>
       </div>
 

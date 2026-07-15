@@ -8,8 +8,9 @@ import {
   type MaterialOption,
   type AssemblyOption,
   type ProgramOption,
+  type LaborTypeOption,
 } from "@/components/assemblies/AssemblyForm";
-import type { Assembly, AssemblyComponent } from "@/lib/types/erp";
+import type { Assembly, AssemblyComponent, AssemblyLabor } from "@/lib/types/erp";
 import type { Profile } from "@/lib/types/shared";
 
 export default async function EditAssemblyPage({ params }: { params: { id: string } }) {
@@ -25,38 +26,58 @@ export default async function EditAssemblyPage({ params }: { params: { id: strin
   if (!canManageCatalog(profile?.role)) redirect("/dashboard/assemblies");
 
   const erp = await erpSchema();
-  const [assemblyRes, componentsRes, materialsRes, assembliesRes, programsRes] = await Promise.all([
-    erp.from("assemblies").select("*").eq("id", params.id).is("deleted_at", null).maybeSingle<Assembly>(),
-    erp
-      .from("assembly_components")
-      .select("*")
-      .eq("parent_assembly_id", params.id)
-      .order("position", { ascending: true })
-      .returns<AssemblyComponent[]>(),
-    erp
-      .from("materials")
-      .select("id, sku, name, category, default_unit_cost, unit_of_measure")
-      .is("deleted_at", null)
-      .eq("active", true)
-      .order("name", { ascending: true })
-      .returns<MaterialOption[]>(),
-    erp
-      .from("assembly_costs")
-      .select("assembly_id, name, assembly_number, is_fixture, unit_cost")
-      .eq("active", true)
-      .order("name", { ascending: true })
-      .returns<AssemblyOption[]>(),
-    erp
-      .from("programs")
-      .select("id, name")
-      .is("deleted_at", null)
-      .eq("active", true)
-      .order("name", { ascending: true })
-      .returns<ProgramOption[]>(),
-  ]);
+  const [assemblyRes, componentsRes, laborRes, materialsRes, assembliesRes, programsRes, laborTypesRes] =
+    await Promise.all([
+      erp.from("assemblies").select("*").eq("id", params.id).is("deleted_at", null).maybeSingle<Assembly>(),
+      erp
+        .from("assembly_components")
+        .select("*")
+        .eq("parent_assembly_id", params.id)
+        .order("position", { ascending: true })
+        .returns<AssemblyComponent[]>(),
+      erp
+        .from("assembly_labor")
+        .select("*")
+        .eq("assembly_id", params.id)
+        .order("position", { ascending: true })
+        .returns<AssemblyLabor[]>(),
+      erp
+        .from("materials")
+        .select("id, sku, name, category, default_unit_cost, unit_of_measure")
+        .is("deleted_at", null)
+        .eq("active", true)
+        .order("name", { ascending: true })
+        .returns<MaterialOption[]>(),
+      erp
+        .from("assembly_costs")
+        .select("assembly_id, name, assembly_number, is_fixture, material_cost, labor_cost, labor_hours")
+        .eq("active", true)
+        .order("name", { ascending: true })
+        .returns<AssemblyOption[]>(),
+      erp
+        .from("programs")
+        .select("id, name")
+        .is("deleted_at", null)
+        .eq("active", true)
+        .order("name", { ascending: true })
+        .returns<ProgramOption[]>(),
+      erp
+        .from("labor_types")
+        .select("id, category, name, rate")
+        .eq("active", true)
+        .order("category", { ascending: true })
+        .order("position", { ascending: true })
+        .returns<LaborTypeOption[]>(),
+    ]);
 
   const error =
-    assemblyRes.error || componentsRes.error || materialsRes.error || assembliesRes.error || programsRes.error;
+    assemblyRes.error ||
+    componentsRes.error ||
+    laborRes.error ||
+    materialsRes.error ||
+    assembliesRes.error ||
+    programsRes.error ||
+    laborTypesRes.error;
   if (error) {
     return <p className="text-sm text-status-hold">Couldn&apos;t load assembly: {error.message}</p>;
   }
@@ -73,9 +94,11 @@ export default async function EditAssemblyPage({ params }: { params: { id: strin
       <AssemblyForm
         assembly={assemblyRes.data}
         components={componentsRes.data ?? []}
+        labor={laborRes.data ?? []}
         materials={materialsRes.data ?? []}
         assemblies={assembliesRes.data ?? []}
         programs={programsRes.data ?? []}
+        laborTypes={laborTypesRes.data ?? []}
       />
     </div>
   );

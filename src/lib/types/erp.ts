@@ -258,8 +258,48 @@ export interface AssemblyComponent {
   updated_at: string;
 }
 
+// ─── Labor ─────────────────────────────────────────────────────
+// Labor is costed from a central rate table: a line stores only a type
+// and hours, and its cost is always hours × the type's current rate.
+// There is no per-line rate override — erp.labor_types is the single
+// source of truth. Rates are edited in the Supabase SQL Editor (see the
+// UPDATE block at the bottom of migration 00016).
+
+export type LaborCategory = "general" | "fabrication";
+
+export const LABOR_CATEGORY_LABELS: Record<LaborCategory, string> = {
+  general: "General Labor",
+  fabrication: "Fabrication",
+};
+
+export interface LaborType {
+  id: string;
+  category: LaborCategory;
+  name: string;
+  rate: number; // $/hr
+  active: boolean;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// One labor line on an assembly. Cost = hours × the type's rate.
+export interface AssemblyLabor {
+  id: string;
+  assembly_id: string;
+  labor_type_id: string;
+  hours: number;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
 // Shape of the erp.assembly_costs view: an assembly with its current
-// rolled-up material cost.
+// rolled-up costs, material and labor kept separate (the next stage
+// marks each up at a different rate). Both roll up through
+// sub-assemblies. `unit_cost` is a deprecated material-only alias of
+// material_cost, retained so the estimate view (00010) keeps pricing
+// fixtures unchanged until split markup lands.
 export interface AssemblyCost {
   assembly_id: string;
   name: string;
@@ -267,7 +307,11 @@ export interface AssemblyCost {
   is_fixture: boolean;
   program_id: string | null;
   active: boolean;
-  unit_cost: number;
+  unit_cost: number;     // deprecated alias of material_cost
+  material_cost: number;
+  labor_cost: number;
+  labor_hours: number;
+  total_cost: number;    // material_cost + labor_cost
 }
 
 // ─── Estimates (quoting) ───────────────────────────────────────

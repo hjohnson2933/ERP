@@ -24,7 +24,9 @@ export default async function AssembliesPage() {
   const [assembliesRes, programsRes] = await Promise.all([
     erp
       .from("assembly_costs")
-      .select("assembly_id, name, assembly_number, is_fixture, program_id, active, unit_cost")
+      .select(
+        "assembly_id, name, assembly_number, is_fixture, program_id, active, unit_cost, material_cost, labor_cost, labor_hours, total_cost"
+      )
       .order("name", { ascending: true })
       .returns<AssemblyCost[]>(),
     erp.from("programs").select("id, name").returns<Pick<Program, "id" | "name">[]>(),
@@ -60,7 +62,9 @@ export default async function AssembliesPage() {
               <th className="px-3 py-2">Number</th>
               <th className="px-3 py-2">Type</th>
               <th className="px-3 py-2">Program</th>
-              <th className="px-3 py-2 text-right">Rolled-up cost</th>
+              <th className="px-3 py-2 text-right">Material</th>
+              <th className="px-3 py-2 text-right">Labor</th>
+              <th className="px-3 py-2 text-right">Total cost</th>
               <th className="px-3 py-2">Active</th>
               {canManage && <th className="px-3 py-2"></th>}
             </tr>
@@ -78,7 +82,16 @@ export default async function AssembliesPage() {
                   )}
                 </td>
                 <td className="px-3 py-2 text-ink-muted">{programName(a.program_id)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{currency(a.unit_cost)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{currency(a.material_cost)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  {currency(a.labor_cost)}
+                  {a.labor_hours > 0 && (
+                    <span className="ml-1 text-xs text-ink-muted">
+                      ({a.labor_hours.toLocaleString(undefined, { maximumFractionDigits: 2 })} hr)
+                    </span>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-right font-medium tabular-nums">{currency(a.total_cost)}</td>
                 <td className="px-3 py-2">{a.active ? "Yes" : "No"}</td>
                 {canManage && (
                   <td className="px-3 py-2 text-right">
@@ -91,7 +104,7 @@ export default async function AssembliesPage() {
             ))}
             {assemblies.length === 0 && (
               <tr>
-                <td colSpan={canManage ? 7 : 6} className="px-3 py-6 text-center text-ink-muted">
+                <td colSpan={canManage ? 9 : 8} className="px-3 py-6 text-center text-ink-muted">
                   No assemblies yet — build one from parts in the Materials list.
                 </td>
               </tr>
