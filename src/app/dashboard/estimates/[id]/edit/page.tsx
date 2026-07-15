@@ -47,7 +47,20 @@ export default async function EditEstimatePage({ params }: { params: { id: strin
       <h1 className="mt-1 text-xl font-semibold text-ink-text">
         {estimate.locked_snapshot_id ? "Estimate" : "Edit estimate"}{" "}
         <span className="font-mono text-sm text-ink-muted">{estimate.estimate_number}</span>
+        {estimate.revision_number > 1 && (
+          <span className="ml-2 rounded-full bg-accent-soft px-2 py-0.5 text-xs font-medium text-accent">
+            Revision {estimate.revision_number}
+          </span>
+        )}
       </h1>
+      {estimate.revision_of && (
+        <Link
+          href={`/dashboard/estimates/${estimate.revision_of}/edit`}
+          className="text-xs text-ink-muted hover:underline"
+        >
+          ← revision of the original estimate
+        </Link>
+      )}
     </div>
   );
 
@@ -78,6 +91,18 @@ export default async function EditEstimatePage({ params }: { params: { id: strin
     const current = snapshots.find((s) => s.id === estimate.locked_snapshot_id) ?? snapshots[0];
     const previous = snapshots.find((s) => s.id !== current?.id) ?? null;
 
+    // Resolve the signer's name for the approval banner. Lives in the
+    // mill list's public.profiles, so it is a separate read.
+    let approvedByName: string | null = null;
+    if (estimate.approved_by) {
+      const { data: approver } = await supabase
+        .from("profiles")
+        .select("full_name")
+        .eq("id", estimate.approved_by)
+        .maybeSingle<Pick<Profile, "full_name">>();
+      approvedByName = approver?.full_name ?? null;
+    }
+
     return (
       <div>
         {header}
@@ -87,6 +112,9 @@ export default async function EditEstimatePage({ params }: { params: { id: strin
             snapshot={current}
             lines={snapLinesRes.data ?? []}
             previous={previous}
+            isApproved={estimate.status === "approved"}
+            approvedByName={approvedByName}
+            approvedAt={estimate.approved_at}
           />
         )}
       </div>

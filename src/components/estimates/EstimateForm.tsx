@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { saveEstimate } from "@/app/dashboard/estimates/actions";
-import { ESTIMATE_STATUS_LABELS } from "@/lib/types/erp";
+import { ESTIMATE_STATUS_LABELS, SELECTABLE_ESTIMATE_STATUSES } from "@/lib/types/erp";
 import type { Estimate, EstimateLineDetail, EstimateStatus, Customer } from "@/lib/types/erp";
 
 type CustomerOption = Pick<Customer, "id" | "name">;
@@ -261,7 +261,7 @@ export function EstimateForm({
         <div>
           <label className={label}>Status</label>
           <select className={field} value={header.status} onChange={setH("status")}>
-            {(Object.keys(ESTIMATE_STATUS_LABELS) as EstimateStatus[]).map((s) => (
+            {SELECTABLE_ESTIMATE_STATUSES.map((s) => (
               <option key={s} value={s}>
                 {ESTIMATE_STATUS_LABELS[s]}
               </option>

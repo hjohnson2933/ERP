@@ -22,11 +22,28 @@ export default async function EstimatesPage() {
   const [estimatesRes, totalsRes, customersRes] = await Promise.all([
     erp
       .from("estimates")
-      .select("id, estimate_number, title, status, customer_id, customer_name, valid_until, order_id, created_at")
+      .select(
+        "id, estimate_number, title, status, customer_id, customer_name, valid_until, order_id, created_at, revision_number, revision_of"
+      )
       .is("deleted_at", null)
       .order("created_at", { ascending: false })
       .limit(50)
-      .returns<Pick<Estimate, "id" | "estimate_number" | "title" | "status" | "customer_id" | "customer_name" | "valid_until" | "order_id" | "created_at">[]>(),
+      .returns<
+        Pick<
+          Estimate,
+          | "id"
+          | "estimate_number"
+          | "title"
+          | "status"
+          | "customer_id"
+          | "customer_name"
+          | "valid_until"
+          | "order_id"
+          | "created_at"
+          | "revision_number"
+          | "revision_of"
+        >[]
+      >(),
     erp
       .from("estimate_totals")
       .select("estimate_id, is_locked, total")
@@ -95,15 +112,26 @@ export default async function EstimatesPage() {
           <tbody>
             {estimates.map((e) => (
               <tr key={e.id} className="border-b border-ink-border last:border-0">
-                <td className="px-3 py-2 font-mono text-xs">{e.estimate_number}</td>
+                <td className="px-3 py-2 font-mono text-xs">
+                  {e.estimate_number}
+                  {e.revision_number > 1 && (
+                    <span className="ml-1 font-sans text-[10px] text-ink-muted">rev {e.revision_number}</span>
+                  )}
+                </td>
                 <td className="px-3 py-2">{e.title || "—"}</td>
                 <td className="px-3 py-2">{displayCustomer(e)}</td>
                 <td className="px-3 py-2">
                   {ESTIMATE_STATUS_LABELS[e.status]}
-                  {lockedByEstimate.get(e.id) && (
-                    <span className="ml-2 rounded-full bg-accent-soft px-2 py-0.5 text-[10px] font-medium uppercase text-accent">
-                      Locked
+                  {e.status === "approved" ? (
+                    <span className="ml-2 rounded-full bg-status-complete/15 px-2 py-0.5 text-[10px] font-medium uppercase text-status-complete">
+                      Signed off
                     </span>
+                  ) : (
+                    lockedByEstimate.get(e.id) && (
+                      <span className="ml-2 rounded-full bg-accent-soft px-2 py-0.5 text-[10px] font-medium uppercase text-accent">
+                        Locked
+                      </span>
+                    )
                   )}
                 </td>
                 <td className="px-3 py-2 text-right">{currency(totalByEstimate.get(e.id) ?? 0)}</td>

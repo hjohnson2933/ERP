@@ -2,7 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { submitEstimate, repriceEstimate, unlockEstimate } from "@/app/dashboard/estimates/actions";
+import {
+  submitEstimate,
+  repriceEstimate,
+  unlockEstimate,
+  approveEstimate,
+  rejectEstimate,
+  reviseEstimate,
+} from "@/app/dashboard/estimates/actions";
 import type { EstimateSnapshot, EstimateSnapshotLine } from "@/lib/types/erp";
 
 const currency = (n: number) =>
@@ -50,27 +57,42 @@ export function SubmitEstimateButton({ estimateId }: { estimateId: string }) {
   );
 }
 
-// Shown instead of the editable form when an estimate IS locked.
+// Shown instead of the editable form when an estimate IS locked, whether
+// awaiting sign-off or already approved.
 export function LockedEstimate({
   estimateId,
   snapshot,
   lines,
   previous,
+  isApproved,
+  approvedByName,
+  approvedAt,
 }: {
   estimateId: string;
   snapshot: EstimateSnapshot;
   lines: EstimateSnapshotLine[];
   previous: EstimateSnapshot | null;
+  isApproved: boolean;
+  approvedByName: string | null;
+  approvedAt: string | null;
 }) {
   const router = useRouter();
-  const [busy, setBusy] = useState<null | "reprice" | "unlock">(null);
+  const [busy, setBusy] = useState<null | "reprice" | "unlock" | "approve" | "reject" | "revise">(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function run(kind: "reprice" | "unlock") {
+  async function run(kind: "reprice" | "unlock" | "approve" | "reject") {
     if (kind === "unlock" && !confirm("Unlock pricing? The estimate returns to live prices and becomes editable again.")) return;
+    if (kind === "approve" && !confirm("Approve this estimate? Once approved it is locked for good — changing it later means creating a revision.")) return;
+    if (kind === "reject" && !confirm("Reject this estimate? It goes back to Draft and a note recording the rejection is added.")) return;
+
     setBusy(kind);
     setError(null);
-    const res = kind === "reprice" ? await repriceEstimate(estimateId) : await unlockEstimate(estimateId);
+    const res =
+      kind === "reprice" ? await repriceEstimate(estimateId)
+      : kind === "unlock" ? await unlockEstimate(estimateId)
+      : kind === "approve" ? await approveEstimate(estimateId)
+      : await rejectEstimate(estimateId);
+
     if (!res.ok) {
       setError(res.error);
       setBusy(null);
@@ -79,19 +101,49 @@ export function LockedEstimate({
     router.refresh();
   }
 
+  // Re-pricing an APPROVED estimate spawns a new draft revision rather
+  // than rewriting a price that has been signed off.
+  async function revise() {
+    if (!confirm("Create a new draft revision with the same details? The approved estimate stays as it is.")) return;
+    setBusy("revise");
+    setError(null);
+    const res = await reviseEstimate(estimateId);
+    if (!res.ok) {
+      setError(res.error);
+      setBusy(null);
+      return;
+    }
+    router.push(`/dashboard/estimates/${res.id}/edit`);
+    router.refresh();
+  }
+
   const delta = previous ? snapshot.total - previous.total : null;
 
   return (
     <div>
-      <div className="mb-4 rounded border border-accent/40 bg-accent-soft p-4">
+      <div
+        className={`mb-4 rounded border p-4 ${
+          isApproved ? "border-status-complete/40 bg-status-complete/10" : "border-accent/40 bg-accent-soft"
+        }`}
+      >
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <div className="text-sm font-semibold text-ink-text">
-              Pricing locked — {snapshot.label || "Snapshot"}
+              {isApproved ? "Approved — locked for good" : `Pricing locked — ${snapshot.label || "Snapshot"}`}
             </div>
             <div className="text-xs text-ink-muted">
-              Frozen {new Date(snapshot.created_at).toLocaleString()} · markup {snapshot.material_markup_pct}%
-              material / {snapshot.labor_markup_pct}% labor
+              {isApproved ? (
+                <>
+                  Signed off by {approvedByName || "a user"}
+                  {approvedAt && <> on {new Date(approvedAt).toLocaleString()}</>} · markup{" "}
+                  {snapshot.material_markup_pct}% material / {snapshot.labor_markup_pct}% labor
+                </>
+              ) : (
+                <>
+                  Frozen {new Date(snapshot.created_at).toLocaleString()} · markup{" "}
+                  {snapshot.material_markup_pct}% material / {snapshot.labor_markup_pct}% labor
+                </>
+              )}
             </div>
           </div>
           <div className="text-right">
@@ -103,22 +155,60 @@ export function LockedEstimate({
             )}
           </div>
         </div>
-        <div className="mt-3 flex gap-3">
-          <button
-            onClick={() => run("reprice")}
-            disabled={busy !== null}
-            className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-60"
-          >
-            {busy === "reprice" ? "Re-pricing…" : "Re-price from current costs"}
-          </button>
-          <button
-            onClick={() => run("unlock")}
-            disabled={busy !== null}
-            className="rounded border border-ink-border px-3 py-1.5 text-sm text-ink-text disabled:opacity-60"
-          >
-            {busy === "unlock" ? "Unlocking…" : "Unlock & edit"}
-          </button>
-        </div>
+
+        {isApproved ? (
+          <div className="mt-3">
+            <button
+              onClick={revise}
+              disabled={busy !== null}
+              className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-60"
+            >
+              {busy === "revise" ? "Creating revision…" : "Re-price as a new revision"}
+            </button>
+            <p className="mt-2 text-xs text-ink-muted">
+              An approved estimate can&apos;t be edited. Re-pricing copies it into a new draft
+              revision (same number with an -r2 suffix) and leaves this one untouched.
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="mt-3 flex flex-wrap gap-3">
+              <button
+                onClick={() => run("approve")}
+                disabled={busy !== null}
+                className="rounded bg-status-complete px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+              >
+                {busy === "approve" ? "Approving…" : "Approve & sign off"}
+              </button>
+              <button
+                onClick={() => run("reject")}
+                disabled={busy !== null}
+                className="rounded border border-status-hold px-3 py-1.5 text-sm font-medium text-status-hold disabled:opacity-60"
+              >
+                {busy === "reject" ? "Rejecting…" : "Reject"}
+              </button>
+              <button
+                onClick={() => run("reprice")}
+                disabled={busy !== null}
+                className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-60"
+              >
+                {busy === "reprice" ? "Re-pricing…" : "Re-price from current costs"}
+              </button>
+              <button
+                onClick={() => run("unlock")}
+                disabled={busy !== null}
+                className="rounded border border-ink-border px-3 py-1.5 text-sm text-ink-text disabled:opacity-60"
+              >
+                {busy === "unlock" ? "Unlocking…" : "Unlock & edit"}
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-ink-muted">
+              Approving records you as the signer with a timestamp and locks the estimate for
+              good. Rejecting sends it back to Draft and adds a note saying who rejected it and
+              when.
+            </p>
+          </>
+        )}
         {error && <p className="mt-2 text-sm text-status-hold">{error}</p>}
       </div>
 

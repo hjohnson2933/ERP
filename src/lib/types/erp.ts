@@ -320,20 +320,32 @@ export interface AssemblyCost {
 // item. When accepted, an estimate converts into an erp.orders row and
 // records the link via order_id.
 
+// Lifecycle: draft → sent (submitted, pricing locked) → approved
+// (immutable) or rejected. Rejecting sends it back to draft with an auto
+// note, so 'rejected' is only reached by setting it by hand.
 export type EstimateStatus =
   | "draft"
   | "sent"
-  | "accepted"
+  | "approved"
   | "rejected"
   | "expired";
 
 export const ESTIMATE_STATUS_LABELS: Record<EstimateStatus, string> = {
   draft: "Draft",
   sent: "Sent",
-  accepted: "Accepted",
+  approved: "Approved",
   rejected: "Rejected",
   expired: "Expired",
 };
+
+// Statuses a user may pick by hand. 'approved' is excluded: it is set
+// only by signing off, so it always carries a signer and a timestamp.
+export const SELECTABLE_ESTIMATE_STATUSES: EstimateStatus[] = [
+  "draft",
+  "sent",
+  "rejected",
+  "expired",
+];
 
 export interface Estimate {
   id: string;
@@ -352,6 +364,14 @@ export interface Estimate {
   material_markup_pct: number;
   labor_markup_pct: number;
   locked_snapshot_id: string | null; // set => pricing is locked to this snapshot
+  // Sign-off. Set together by approve_estimate(); an approved estimate is
+  // immutable in the database, so changing it means taking a revision.
+  approved_by: string | null;      // soft ref to public.profiles.id
+  approved_at: string | null;
+  // Revision linkage. revision_of always points at the ROOT original, so
+  // a family is one hop deep. Revision 1 is the original itself.
+  revision_of: string | null;
+  revision_number: number;
   notes: string;
   created_by: string | null;       // soft ref to public.profiles.id
   deleted_at: string | null;

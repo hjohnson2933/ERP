@@ -191,3 +191,51 @@ export async function unlockEstimate(id: string): Promise<ActionResult> {
   revalidatePath(`/dashboard/estimates/${id}/edit`);
   return { ok: true };
 }
+
+// ─── Sign-off ──────────────────────────────────────────────────
+// The DB records who approved and when, and enforces immutability from
+// then on — these actions only gate on role and surface the error.
+
+export async function approveEstimate(id: string): Promise<ActionResult> {
+  const guard = await requireEstimateManager();
+  if (guard.error) return { ok: false, error: guard.error };
+
+  const erp = await erpSchema();
+  const { error } = await erp.rpc("approve_estimate", { p_estimate_id: id });
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/dashboard/estimates");
+  revalidatePath(`/dashboard/estimates/${id}/edit`);
+  return { ok: true };
+}
+
+// Sends the estimate back to Draft and appends an auto note naming the
+// rejector and the time.
+export async function rejectEstimate(id: string): Promise<ActionResult> {
+  const guard = await requireEstimateManager();
+  if (guard.error) return { ok: false, error: guard.error };
+
+  const erp = await erpSchema();
+  const { error } = await erp.rpc("reject_estimate", { p_estimate_id: id });
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/dashboard/estimates");
+  revalidatePath(`/dashboard/estimates/${id}/edit`);
+  return { ok: true };
+}
+
+export type ReviseResult = { ok: true; id: string } | { ok: false; error: string };
+
+// Copy an estimate into a new draft revision (<base>-r2). This is how an
+// approved estimate gets re-priced.
+export async function reviseEstimate(id: string): Promise<ReviseResult> {
+  const guard = await requireEstimateManager();
+  if (guard.error) return { ok: false, error: guard.error };
+
+  const erp = await erpSchema();
+  const { data, error } = await erp.rpc("revise_estimate", { p_estimate_id: id });
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/dashboard/estimates");
+  return { ok: true, id: data as unknown as string };
+}

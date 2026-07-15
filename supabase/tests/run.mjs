@@ -210,6 +210,137 @@ const [liveAfter] = await q(
 check("an unlocked estimate prices labor live (before)", liveBefore.total, 330.75);
 check("an unlocked estimate follows a rate change (after)", liveAfter.total, 540.75);
 
+// ─── Approval lifecycle (00018) ────────────────────────────────
+// Sign-off is attributed to the logged-in user, so give auth.uid() a
+// real profile to resolve.
+await db.exec(`
+  insert into public.profiles (id, role) values
+    ('66666666-0000-0000-0000-000000000001','admin');
+  alter table public.profiles add column if not exists full_name text not null default '';
+  update public.profiles set full_name = 'Dana Miller' where id='66666666-0000-0000-0000-000000000001';
+  create or replace function auth.uid() returns uuid language sql stable
+    as $$ select '66666666-0000-0000-0000-000000000001'::uuid $$;
+`);
+
+const throws = async (sql) => {
+  try {
+    await db.exec(sql);
+    return false;
+  } catch {
+    return true;
+  }
+};
+
+// Approving live pricing must be refused — the number could still move.
+checkRaw(
+  "cannot approve an estimate whose pricing is not locked",
+  await throws(`select erp.approve_estimate('55555555-0000-0000-0000-000000000002')`),
+  true
+);
+
+// est 1 is locked from the price-lock section above.
+await db.exec(`
+  update erp.estimates set status='sent' where id='55555555-0000-0000-0000-000000000001';
+  select erp.approve_estimate('55555555-0000-0000-0000-000000000001');
+`);
+const [appr] = await q(`
+  select status::text as status, approved_by, approved_at is not null as has_ts
+  from erp.estimates where id='55555555-0000-0000-0000-000000000001'
+`);
+checkRaw("approve sets status to approved", appr.status, "approved");
+checkRaw("approve records who signed off", appr.approved_by, "66666666-0000-0000-0000-000000000001");
+checkRaw("approve records when", appr.has_ts, true);
+
+// Immutability is enforced by the database, not just the UI.
+checkRaw(
+  "an approved estimate cannot be edited",
+  await throws(`update erp.estimates set title='hacked' where id='55555555-0000-0000-0000-000000000001'`),
+  true
+);
+checkRaw(
+  "an approved estimate's lines cannot be added to",
+  await throws(`insert into erp.estimate_lines (estimate_id, description, quantity, unit_price, position)
+                values ('55555555-0000-0000-0000-000000000001','sneaky',1,1,9)`),
+  true
+);
+checkRaw(
+  "an approved estimate's lines cannot be deleted (saveEstimate's delete+reinsert)",
+  await throws(`delete from erp.estimate_lines where estimate_id='55555555-0000-0000-0000-000000000001'`),
+  true
+);
+checkRaw(
+  "an approved estimate cannot be deleted",
+  await throws(`delete from erp.estimates where id='55555555-0000-0000-0000-000000000001'`),
+  true
+);
+checkRaw(
+  "an approved estimate cannot be rejected",
+  await throws(`select erp.reject_estimate('55555555-0000-0000-0000-000000000001')`),
+  true
+);
+
+// Revise: the only way to change an approved estimate.
+const [{ revise_estimate: revId }] = await q(
+  `select erp.revise_estimate('55555555-0000-0000-0000-000000000001') as revise_estimate`
+);
+const [rev] = await q(`
+  select estimate_number, status::text as status, revision_of, revision_number,
+         locked_snapshot_id, material_markup_pct, labor_markup_pct, title
+  from erp.estimates where id='${revId}'
+`);
+checkRaw("revision is numbered <base>-r2", rev.estimate_number, "E00001-r2");
+checkRaw("revision starts as a draft", rev.status, "draft");
+checkRaw("revision links to the original", rev.revision_of, "55555555-0000-0000-0000-000000000001");
+checkRaw("revision records its number", rev.revision_number, 2);
+checkRaw("revision starts unlocked (re-prices live)", rev.locked_snapshot_id, null);
+checkRaw("revision carries the title over", rev.title, "Test Estimate");
+check("revision carries the material markup over", rev.material_markup_pct, 35);
+check("revision carries the labor markup over", rev.labor_markup_pct, 60);
+
+const [{ count: revLines }] = await q(
+  `select count(*)::int as count from erp.estimate_lines where estimate_id='${revId}'`
+);
+const [{ count: srcLines }] = await q(
+  `select count(*)::int as count from erp.estimate_lines where estimate_id='55555555-0000-0000-0000-000000000001'`
+);
+checkRaw("revision copies every line", revLines, srcLines);
+
+// The original stays approved and untouched.
+const [stillAppr] = await q(
+  `select status::text as status from erp.estimates where id='55555555-0000-0000-0000-000000000001'`
+);
+checkRaw("taking a revision leaves the original approved", stillAppr.status, "approved");
+
+// Revising a revision must not stack suffixes (-r2-r3) and must still
+// hang off the root.
+const [{ revise_estimate: rev3Id }] = await q(`select erp.revise_estimate('${revId}') as revise_estimate`);
+const [rev3] = await q(`select estimate_number, revision_of from erp.estimates where id='${rev3Id}'`);
+checkRaw("revising a revision increments rather than stacking suffixes", rev3.estimate_number, "E00001-r3");
+checkRaw("a revision of a revision still links to the root", rev3.revision_of, "55555555-0000-0000-0000-000000000001");
+
+// Reject: back to draft, unlocked, with an attributed note.
+await db.exec(`
+  select erp.lock_estimate('55555555-0000-0000-0000-000000000002','Submitted');
+  update erp.estimates set status='sent', notes='Existing note'
+    where id='55555555-0000-0000-0000-000000000002';
+  select erp.reject_estimate('55555555-0000-0000-0000-000000000002');
+`);
+const [rej] = await q(`
+  select status::text as status, locked_snapshot_id, notes
+  from erp.estimates where id='55555555-0000-0000-0000-000000000002'
+`);
+checkRaw("reject sends the estimate back to draft", rej.status, "draft");
+checkRaw("reject unlocks the pricing so it can be edited", rej.locked_snapshot_id, null);
+checkRaw("reject names the rejector in the note", rej.notes.includes("Rejected by Dana Miller"), true);
+checkRaw("reject timestamps the note", /Rejected by Dana Miller at \d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(rej.notes), true);
+checkRaw("reject appends rather than overwriting existing notes", rej.notes.startsWith("Existing note"), true);
+
+// The snapshot history survives a rejection.
+const [{ count: snapCount }] = await q(
+  `select count(*)::int as count from erp.estimate_snapshots where estimate_id='55555555-0000-0000-0000-000000000002'`
+);
+checkRaw("reject keeps the snapshot history", snapCount > 0, true);
+
 // ─── Report ────────────────────────────────────────────────────
 console.log("");
 const failed = report();
