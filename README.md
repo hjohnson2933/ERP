@@ -36,6 +36,30 @@ backend.
    /dashboard/jobs page should immediately show the same jobs from
    the mill list app, confirming the connection works end to end.
 
+## Testing migrations before running them
+
+Migrations are applied by hand in the Supabase SQL Editor, so a broken
+one is only discovered when it is pasted in and fails — and neither
+`tsc` nor `next build` can see SQL at all.
+
+```
+npm run test:migrations
+```
+
+This applies every migration in `supabase/migrations`, in order, to a
+real throwaway Postgres (pglite — Postgres compiled to WASM, so there is
+no server or Docker to install), then asserts the costing and pricing
+rules: the material and labor roll-ups, the split markup, and that a
+locked estimate ignores later cost changes. Run it after writing or
+editing any migration, before pasting the file into Supabase.
+
+If it prints `FAIL` next to a filename, the error shown is the same one
+Supabase would give you. Fix it first.
+
+When adding a migration that changes costing or pricing, add a case for
+the new rule to `supabase/tests/run.mjs` — the assertions are what stop
+a future change from silently re-pricing existing work.
+
 ## What's deliberately not built yet
 
 `customers`, `estimates`, and `materials` are placeholder pages. The
