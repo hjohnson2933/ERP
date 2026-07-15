@@ -11,7 +11,8 @@ export type FixtureOption = {
   assembly_id: string;
   name: string;
   assembly_number: string | null;
-  unit_cost: number;
+  material_cost: number;
+  labor_cost: number;
 };
 
 const field =
@@ -25,12 +26,14 @@ const currency = (n: number) =>
 type LineRow = {
   kind: "fixture" | "custom";
   fixture_id: string | null;
-  label: string;          // fixture name
+  label: string;           // fixture name
   sku: string | null;
-  base_cost: number;      // fixture rolled-up cost (live)
-  description: string;    // custom description
-  unit_price: string;     // custom sell price
-  markup: string;         // fixture markup override ("" => inherit estimate default)
+  material_cost: number;   // fixture rolled-up material cost (live)
+  labor_cost: number;      // fixture rolled-up labor cost (live)
+  description: string;     // custom description
+  unit_price: string;      // custom sell price
+  material_markup: string; // per-line override ("" => inherit estimate default)
+  labor_markup: string;    // per-line override ("" => inherit estimate default)
   quantity: string;
 };
 
@@ -56,7 +59,8 @@ export function EstimateForm({
     contact_email: estimate?.contact_email ?? "",
     contact_phone: estimate?.contact_phone ?? "",
     valid_until: estimate?.valid_until ?? "",
-    markup_pct: estimate?.markup_pct != null ? String(estimate.markup_pct) : "0",
+    material_markup_pct: estimate?.material_markup_pct != null ? String(estimate.material_markup_pct) : "0",
+    labor_markup_pct: estimate?.labor_markup_pct != null ? String(estimate.labor_markup_pct) : "0",
     notes: estimate?.notes ?? "",
   });
 
@@ -68,10 +72,12 @@ export function EstimateForm({
           fixture_id: l.fixture_id,
           label: l.description,
           sku: l.sku,
-          base_cost: l.unit_cost ?? 0,
+          material_cost: l.material_cost ?? 0,
+          labor_cost: l.labor_cost ?? 0,
           description: "",
           unit_price: "",
-          markup: l.markup_override == null ? "" : String(l.markup_override),
+          material_markup: l.material_markup_override == null ? "" : String(l.material_markup_override),
+          labor_markup: l.labor_markup_override == null ? "" : String(l.labor_markup_override),
           quantity: String(l.quantity),
         };
       }
@@ -81,10 +87,12 @@ export function EstimateForm({
         fixture_id: null,
         label: "",
         sku: null,
-        base_cost: 0,
+        material_cost: 0,
+        labor_cost: 0,
         description: l.description,
         unit_price: String(l.unit_price),
-        markup: "",
+        material_markup: "",
+        labor_markup: "",
         quantity: String(l.quantity),
       };
     })
@@ -94,7 +102,8 @@ export function EstimateForm({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const estimateMarkup = parseFloat(header.markup_pct) || 0;
+  const estimateMaterialMarkup = parseFloat(header.material_markup_pct) || 0;
+  const estimateLaborMarkup = parseFloat(header.labor_markup_pct) || 0;
 
   const setH =
     (key: keyof typeof header) =>
@@ -113,10 +122,12 @@ export function EstimateForm({
         fixture_id: f.assembly_id,
         label: f.name,
         sku: f.assembly_number,
-        base_cost: f.unit_cost,
+        material_cost: f.material_cost,
+        labor_cost: f.labor_cost,
         description: "",
         unit_price: "",
-        markup: "",
+        material_markup: "",
+        labor_markup: "",
         quantity: "1",
       },
     ]);
@@ -125,7 +136,19 @@ export function EstimateForm({
   const addCustom = () =>
     setLines((rows) => [
       ...rows,
-      { kind: "custom", fixture_id: null, label: "", sku: null, base_cost: 0, description: "", unit_price: "", markup: "", quantity: "1" },
+      {
+        kind: "custom",
+        fixture_id: null,
+        label: "",
+        sku: null,
+        material_cost: 0,
+        labor_cost: 0,
+        description: "",
+        unit_price: "",
+        material_markup: "",
+        labor_markup: "",
+        quantity: "1",
+      },
     ]);
 
   const matches = useMemo(() => {
@@ -136,12 +159,32 @@ export function EstimateForm({
       .slice(0, 8);
   }, [search, fixtures]);
 
-  // Effective sell price for a row.
-  const rowMarkup = (r: LineRow) => (r.markup.trim() === "" ? estimateMarkup : parseFloat(r.markup) || 0);
+  // Effective markups for a row: a blank override inherits the estimate default.
+  const rowMaterialMarkup = (r: LineRow) =>
+    r.material_markup.trim() === "" ? estimateMaterialMarkup : parseFloat(r.material_markup) || 0;
+  const rowLaborMarkup = (r: LineRow) =>
+    r.labor_markup.trim() === "" ? estimateLaborMarkup : parseFloat(r.labor_markup) || 0;
+
+  // Mirrors erp.estimate_line_details: each cost component is marked up at
+  // its own rate. Custom lines have no split — they keep a typed price.
   const sellPrice = (r: LineRow) =>
-    r.kind === "fixture" ? r.base_cost * (1 + rowMarkup(r) / 100) : parseFloat(r.unit_price) || 0;
+    r.kind === "fixture"
+      ? r.material_cost * (1 + rowMaterialMarkup(r) / 100) +
+        r.labor_cost * (1 + rowLaborMarkup(r) / 100)
+      : parseFloat(r.unit_price) || 0;
   const lineTotal = (r: LineRow) => (parseFloat(r.quantity) || 0) * sellPrice(r);
   const grandTotal = lines.reduce((sum, r) => sum + lineTotal(r), 0);
+
+  const costTotals = lines.reduce(
+    (acc, r) => {
+      const qty = parseFloat(r.quantity) || 0;
+      return {
+        material: acc.material + qty * r.material_cost,
+        labor: acc.labor + qty * r.labor_cost,
+      };
+    },
+    { material: 0, labor: 0 }
+  );
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -157,14 +200,18 @@ export function EstimateForm({
       contact_email: header.contact_email,
       contact_phone: header.contact_phone,
       valid_until: header.valid_until || null,
-      markup_pct: estimateMarkup,
+      material_markup_pct: estimateMaterialMarkup,
+      labor_markup_pct: estimateLaborMarkup,
       notes: header.notes,
       lines: lines.map((r) => ({
         fixture_id: r.kind === "fixture" ? r.fixture_id : null,
         description: r.description,
         quantity: parseFloat(r.quantity) || 0,
         unit_price: r.kind === "custom" ? parseFloat(r.unit_price) || 0 : null,
-        markup_pct: r.kind === "fixture" && r.markup.trim() !== "" ? parseFloat(r.markup) || 0 : null,
+        material_markup_pct:
+          r.kind === "fixture" && r.material_markup.trim() !== "" ? parseFloat(r.material_markup) || 0 : null,
+        labor_markup_pct:
+          r.kind === "fixture" && r.labor_markup.trim() !== "" ? parseFloat(r.labor_markup) || 0 : null,
       })),
     });
 
@@ -221,10 +268,24 @@ export function EstimateForm({
             ))}
           </select>
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <div>
-            <label className={label}>Markup %</label>
-            <input className={`${field} text-right`} inputMode="decimal" value={header.markup_pct} onChange={setH("markup_pct")} />
+            <label className={label}>Material markup %</label>
+            <input
+              className={`${field} text-right`}
+              inputMode="decimal"
+              value={header.material_markup_pct}
+              onChange={setH("material_markup_pct")}
+            />
+          </div>
+          <div>
+            <label className={label}>Labor markup %</label>
+            <input
+              className={`${field} text-right`}
+              inputMode="decimal"
+              value={header.labor_markup_pct}
+              onChange={setH("labor_markup_pct")}
+            />
           </div>
           <div>
             <label className={label}>Valid until</label>
@@ -257,7 +318,12 @@ export function EstimateForm({
                       <span className="font-medium text-ink-text">{f.name}</span>{" "}
                       {f.assembly_number && <span className="font-mono text-xs text-ink-muted">{f.assembly_number}</span>}
                     </span>
-                    <span className="tabular-nums text-ink-muted">cost {currency(f.unit_cost)}</span>
+                    <span className="tabular-nums text-ink-muted">
+                      cost {currency(f.material_cost + f.labor_cost)}
+                      <span className="ml-1 text-xs">
+                        (mat {currency(f.material_cost)} · lab {currency(f.labor_cost)})
+                      </span>
+                    </span>
                   </button>
                 </li>
               ))}
@@ -271,8 +337,10 @@ export function EstimateForm({
               <tr className="border-b border-ink-border text-left text-ink-muted">
                 <th className="px-3 py-2">Item</th>
                 <th className="w-20 px-3 py-2 text-right">Qty</th>
-                <th className="w-28 px-3 py-2 text-right">Cost</th>
-                <th className="w-24 px-3 py-2 text-right">Markup %</th>
+                <th className="w-28 px-3 py-2 text-right">Material cost</th>
+                <th className="w-20 px-3 py-2 text-right">Mat. %</th>
+                <th className="w-28 px-3 py-2 text-right">Labor cost</th>
+                <th className="w-20 px-3 py-2 text-right">Lab. %</th>
                 <th className="w-28 px-3 py-2 text-right">Sell price</th>
                 <th className="w-28 px-3 py-2 text-right">Total</th>
                 <th className="w-10 px-3 py-2"></th>
@@ -305,18 +373,48 @@ export function EstimateForm({
                       <input className={`${field} text-right`} inputMode="decimal" value={r.quantity} onChange={(e) => setLine(i, "quantity", e.target.value)} />
                     </td>
                     <td className="px-3 py-1.5 text-right tabular-nums text-ink-muted">
-                      {custom ? "—" : currency(r.base_cost)}
+                      {custom ? "—" : currency(r.material_cost)}
                     </td>
                     <td className="px-2 py-1.5">
                       {custom ? (
                         <div className="px-2 text-right text-ink-muted">—</div>
                       ) : (
                         <input
-                          className={`${field} text-right`}
+                          className={`${field} text-right ${
+                            r.material_markup.trim() !== "" ? "!border-accent !bg-accent-soft font-semibold text-accent" : ""
+                          }`}
                           inputMode="decimal"
-                          value={r.markup}
-                          onChange={(e) => setLine(i, "markup", e.target.value)}
-                          placeholder={String(estimateMarkup)}
+                          value={r.material_markup}
+                          onChange={(e) => setLine(i, "material_markup", e.target.value)}
+                          placeholder={String(estimateMaterialMarkup)}
+                          title={
+                            r.material_markup.trim() !== ""
+                              ? `Overridden — estimate default ${estimateMaterialMarkup}%`
+                              : "Inheriting the estimate default"
+                          }
+                        />
+                      )}
+                    </td>
+                    <td className="px-3 py-1.5 text-right tabular-nums text-ink-muted">
+                      {custom ? "—" : currency(r.labor_cost)}
+                    </td>
+                    <td className="px-2 py-1.5">
+                      {custom ? (
+                        <div className="px-2 text-right text-ink-muted">—</div>
+                      ) : (
+                        <input
+                          className={`${field} text-right ${
+                            r.labor_markup.trim() !== "" ? "!border-accent !bg-accent-soft font-semibold text-accent" : ""
+                          }`}
+                          inputMode="decimal"
+                          value={r.labor_markup}
+                          onChange={(e) => setLine(i, "labor_markup", e.target.value)}
+                          placeholder={String(estimateLaborMarkup)}
+                          title={
+                            r.labor_markup.trim() !== ""
+                              ? `Overridden — estimate default ${estimateLaborMarkup}%`
+                              : "Inheriting the estimate default"
+                          }
                         />
                       )}
                     </td>
@@ -338,7 +436,7 @@ export function EstimateForm({
               })}
               {lines.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-3 py-6 text-center text-ink-muted">
+                  <td colSpan={9} className="px-3 py-6 text-center text-ink-muted">
                     Search fixtures above, or add a custom line below.
                   </td>
                 </tr>
@@ -346,7 +444,7 @@ export function EstimateForm({
             </tbody>
             <tfoot>
               <tr className="border-t border-ink-border">
-                <td className="px-3 py-2" colSpan={5}>
+                <td className="px-3 py-2" colSpan={7}>
                   <button type="button" onClick={addCustom} className="text-sm font-medium text-accent hover:underline">
                     + Add custom (non-stock) line
                   </button>
@@ -354,12 +452,28 @@ export function EstimateForm({
                 <td className="px-3 py-2 text-right font-semibold tabular-nums">{currency(grandTotal)}</td>
                 <td></td>
               </tr>
+              <tr className="border-t border-ink-border text-xs text-ink-muted">
+                <td className="px-3 py-2" colSpan={2}>
+                  Cost before markup
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">{currency(costTotals.material)}</td>
+                <td></td>
+                <td className="px-3 py-2 text-right tabular-nums">{currency(costTotals.labor)}</td>
+                <td colSpan={2}></td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  {currency(costTotals.material + costTotals.labor)}
+                </td>
+                <td></td>
+              </tr>
             </tfoot>
           </table>
         </div>
         <p className="mt-2 text-xs text-ink-muted">
-          Fixture sell price = rolled-up material cost × (1 + markup). The Markup % above is the
-          estimate default; leave a line&apos;s markup blank to inherit it, or set a per-line override.
+          Fixture sell price = material cost × (1 + material markup) + labor cost × (1 + labor
+          markup), both rolled up through sub-assemblies. The percentages above are the estimate
+          defaults; leave a line&apos;s markup blank to inherit, or type an override — overridden
+          cells are highlighted light orange. Custom (non-stock) lines have no cost split and take
+          the sell price you type.
         </p>
       </div>
 

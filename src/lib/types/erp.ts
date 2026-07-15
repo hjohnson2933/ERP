@@ -347,7 +347,10 @@ export interface Estimate {
   valid_until: string | null;
   job_id: string | null;           // soft ref to public.jobs.id
   order_id: string | null;         // set when converted to an order
-  markup_pct: number;              // estimate-wide default markup % on fixture cost
+  // Estimate-wide default markups. Material and labor are marked up
+  // separately: sell = material_cost × (1 + mat) + labor_cost × (1 + lab).
+  material_markup_pct: number;
+  labor_markup_pct: number;
   locked_snapshot_id: string | null; // set => pricing is locked to this snapshot
   notes: string;
   created_by: string | null;       // soft ref to public.profiles.id
@@ -366,7 +369,9 @@ export interface EstimateLine {
   quantity: number;
   unit_price: number | null;         // custom sell price; NULL for fixture/material lines
   unit_cost: number | null;          // optional, for margin
-  markup_pct: number | null;         // per-line markup override (fixtures); NULL => inherit estimate default
+  // Per-line markup overrides (fixtures); NULL => inherit the estimate default.
+  material_markup_pct: number | null;
+  labor_markup_pct: number | null;
   position: number;
   created_at: string;
   updated_at: string;
@@ -374,9 +379,10 @@ export interface EstimateLine {
 
 export type EstimateLineKind = "fixture" | "material" | "custom";
 
-// Shape of the erp.estimate_line_details view: estimate lines with the
-// effective sell price (fixtures priced at rolled-up cost × markup) and
-// computed total.
+// Shape of the erp.estimate_line_details view: estimate lines with each
+// cost component, the markup applied to each, and the effective sell
+// price. Fixtures are priced material_cost × (1 + material markup) +
+// labor_cost × (1 + labor markup); custom lines keep a typed price.
 export interface EstimateLineDetail {
   id: string;
   estimate_id: string;
@@ -387,11 +393,17 @@ export interface EstimateLineDetail {
   description: string;
   sku: string | null;
   quantity: number;
-  unit_price: number;        // effective sell price
-  unit_cost: number | null;  // underlying cost (fixtures/materials); null for custom
-  markup_pct: number | null; // effective markup applied (fixtures only)
-  markup_override: number | null; // raw per-line override (null => inherits estimate default)
-  line_total: number;        // quantity * unit_price
+  unit_price: number;           // effective sell price
+  material_cost: number | null; // null for custom lines
+  labor_cost: number | null;    // fixtures only
+  unit_cost: number | null;     // material + labor; null for custom
+  // Effective markups applied (fixtures only).
+  material_markup_pct: number | null;
+  labor_markup_pct: number | null;
+  // Raw per-line overrides (null => inheriting the estimate default).
+  material_markup_override: number | null;
+  labor_markup_override: number | null;
+  line_total: number;           // quantity * unit_price
   position: number;
   created_at: string;
   updated_at: string;
@@ -402,7 +414,8 @@ export interface EstimateSnapshot {
   id: string;
   estimate_id: string;
   label: string;
-  markup_pct: number;
+  material_markup_pct: number;
+  labor_markup_pct: number;
   total: number;
   created_by: string | null;
   created_at: string;
@@ -415,8 +428,11 @@ export interface EstimateSnapshotLine {
   description: string;
   sku: string | null;
   quantity: number;
-  unit_cost: number | null;
-  markup_pct: number | null;
+  unit_cost: number | null;      // material + labor as frozen
+  material_cost: number | null;
+  labor_cost: number | null;
+  material_markup_pct: number | null;
+  labor_markup_pct: number | null;
   unit_price: number;
   line_total: number;
   position: number;

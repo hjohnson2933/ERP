@@ -109,7 +109,7 @@ export default async function EditEstimatePage({ params }: { params: { id: strin
       .returns<Pick<Customer, "id" | "name">[]>(),
     erp
       .from("assembly_costs")
-      .select("assembly_id, name, assembly_number, unit_cost")
+      .select("assembly_id, name, assembly_number, material_cost, labor_cost")
       .eq("is_fixture", true)
       .eq("active", true)
       .order("name", { ascending: true })

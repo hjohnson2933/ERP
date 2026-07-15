@@ -14,7 +14,9 @@ export interface EstimateLineInput {
   description: string;         // custom-line description
   quantity: number;
   unit_price: number | null;  // custom sell price; null for fixtures
-  markup_pct: number | null;  // fixture per-line override; null => inherit estimate default
+  // Fixture per-line markup overrides; null => inherit the estimate default.
+  material_markup_pct: number | null;
+  labor_markup_pct: number | null;
 }
 
 export interface EstimateInput {
@@ -26,7 +28,9 @@ export interface EstimateInput {
   contact_email: string;
   contact_phone: string;
   valid_until: string | null;
-  markup_pct: number;         // estimate-wide default markup %
+  // Estimate-wide default markups, applied to each cost component.
+  material_markup_pct: number;
+  labor_markup_pct: number;
   notes: string;
   lines: EstimateLineInput[];
 }
@@ -47,8 +51,11 @@ export async function saveEstimate(input: EstimateInput): Promise<SaveResult> {
     return { ok: false, error: "You don't have permission to manage estimates." };
   }
 
-  if (!Number.isFinite(input.markup_pct) || input.markup_pct < 0) {
-    return { ok: false, error: "Markup must be 0 or more." };
+  if (!Number.isFinite(input.material_markup_pct) || input.material_markup_pct < 0) {
+    return { ok: false, error: "Material markup must be 0 or more." };
+  }
+  if (!Number.isFinite(input.labor_markup_pct) || input.labor_markup_pct < 0) {
+    return { ok: false, error: "Labor markup must be 0 or more." };
   }
 
   // Keep fixture lines and non-empty custom lines.
@@ -66,7 +73,12 @@ export async function saveEstimate(input: EstimateInput): Promise<SaveResult> {
       if (l.unit_price == null || !Number.isFinite(l.unit_price) || l.unit_price < 0) {
         return { ok: false, error: `Custom line "${l.description.trim()}" needs a price of 0 or more.` };
       }
-    } else if (l.markup_pct != null && (!Number.isFinite(l.markup_pct) || l.markup_pct < 0)) {
+    } else if (
+      (l.material_markup_pct != null &&
+        (!Number.isFinite(l.material_markup_pct) || l.material_markup_pct < 0)) ||
+      (l.labor_markup_pct != null &&
+        (!Number.isFinite(l.labor_markup_pct) || l.labor_markup_pct < 0))
+    ) {
       return { ok: false, error: "A line markup override must be 0 or more." };
     }
   }
@@ -83,7 +95,8 @@ export async function saveEstimate(input: EstimateInput): Promise<SaveResult> {
     contact_email: input.contact_email.trim(),
     contact_phone: input.contact_phone.trim(),
     valid_until: input.valid_until || null,
-    markup_pct: input.markup_pct,
+    material_markup_pct: input.material_markup_pct,
+    labor_markup_pct: input.labor_markup_pct,
     notes: input.notes.trim(),
   };
 
@@ -110,7 +123,8 @@ export async function saveEstimate(input: EstimateInput): Promise<SaveResult> {
       description: isFixture ? "" : l.description.trim(), // fixture name resolved live in the view
       quantity: l.quantity,
       unit_price: isFixture ? null : l.unit_price,
-      markup_pct: isFixture ? l.markup_pct : null,
+      material_markup_pct: isFixture ? l.material_markup_pct : null,
+      labor_markup_pct: isFixture ? l.labor_markup_pct : null,
       position: i,
     };
   });

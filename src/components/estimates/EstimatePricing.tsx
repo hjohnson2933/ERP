@@ -90,7 +90,8 @@ export function LockedEstimate({
               Pricing locked — {snapshot.label || "Snapshot"}
             </div>
             <div className="text-xs text-ink-muted">
-              Frozen {new Date(snapshot.created_at).toLocaleString()} · markup {snapshot.markup_pct}%
+              Frozen {new Date(snapshot.created_at).toLocaleString()} · markup {snapshot.material_markup_pct}%
+              material / {snapshot.labor_markup_pct}% labor
             </div>
           </div>
           <div className="text-right">
@@ -127,6 +128,8 @@ export function LockedEstimate({
             <tr className="border-b border-ink-border text-left text-ink-muted">
               <th className="px-3 py-2">Item</th>
               <th className="px-3 py-2 text-right">Qty</th>
+              <th className="px-3 py-2 text-right">Material cost</th>
+              <th className="px-3 py-2 text-right">Labor cost</th>
               <th className="px-3 py-2 text-right">Unit price</th>
               <th className="px-3 py-2 text-right">Total</th>
             </tr>
@@ -140,13 +143,25 @@ export function LockedEstimate({
                   {l.kind === "custom" && <span className="ml-2 text-[10px] uppercase text-status-partial">non-stock</span>}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">{l.quantity}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-ink-muted">
+                  {l.material_cost == null ? "—" : currency(l.material_cost)}
+                  {l.material_cost != null && l.material_markup_pct != null && (
+                    <span className="ml-1 text-xs">+{l.material_markup_pct}%</span>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums text-ink-muted">
+                  {l.labor_cost == null ? "—" : currency(l.labor_cost)}
+                  {l.labor_cost != null && l.labor_markup_pct != null && (
+                    <span className="ml-1 text-xs">+{l.labor_markup_pct}%</span>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-right tabular-nums">{currency(l.unit_price)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{currency(l.line_total)}</td>
               </tr>
             ))}
             {lines.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-3 py-6 text-center text-ink-muted">
+                <td colSpan={6} className="px-3 py-6 text-center text-ink-muted">
                   This snapshot has no lines.
                 </td>
               </tr>
@@ -154,7 +169,7 @@ export function LockedEstimate({
           </tbody>
           <tfoot>
             <tr className="border-t border-ink-border">
-              <td colSpan={3} className="px-3 py-2 text-right text-sm font-semibold text-ink-text">
+              <td colSpan={5} className="px-3 py-2 text-right text-sm font-semibold text-ink-text">
                 Locked total
               </td>
               <td className="px-3 py-2 text-right font-semibold tabular-nums">{currency(snapshot.total)}</td>
