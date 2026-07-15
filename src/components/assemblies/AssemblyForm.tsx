@@ -462,7 +462,7 @@ export function AssemblyForm({
                             ) : (
                               <div className="flex items-center justify-end gap-1">
                                 <input
-                                  className={`${field} text-right ${row.is_override ? "border-accent bg-accent-soft" : ""}`}
+                                  className={`${field} text-right ${row.is_override ? "!border-accent !bg-accent-soft font-semibold text-accent" : ""}`}
                                   inputMode="decimal"
                                   value={row.is_override ? row.cost_override : String(row.unit_cost)}
                                   onChange={(e) => setRowCost(index, e.target.value)}
