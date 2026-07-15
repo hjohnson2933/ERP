@@ -1,5 +1,14 @@
 # ERP — Session Handoff (2026-07-14, batch 2)
 
+> ## ⚠️ SUPERSEDED — read `SESSION_HANDOFF_2026-07-15.md` instead
+>
+> Batch 2 is **complete** (all 5 stages shipped 2026-07-15); §6 below describes it
+> as in progress. More importantly, **§1 is now wrong**: it says deploy is
+> patch-based via `git am` on branch `claude/erp-session-handoff-u0um03`, which was
+> true only of the read-only build sandbox that wrote this doc. The working copy is
+> on `main` with a real push remote — work is committed directly, and handing over a
+> patch makes `git am` fail. Kept for historical context only.
+
 _Context package to continue this work in a fresh coding session. Companion to
 `ERP_SESSION_HANDOFF.md` (architecture, 2026-07-10) and `PROGRESS_2026-07-14.md`
 (the first half of today). This doc captures the **current state** and the
