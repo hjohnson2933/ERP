@@ -17,9 +17,21 @@ import { fileURLToPath } from "node:url";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const MIGRATIONS_DIR = path.join(HERE, "..", "migrations");
 
-// Supabase and the mill list provide these at runtime; the migrations
-// depend on them, so a bare Postgres needs stand-ins. Stubs only — they
-// exist to let the chain run, not to model real auth.
+// Supabase provides these at runtime; a bare Postgres does not, so it
+// needs stand-ins. This is ONLY what Supabase itself owns — the auth
+// schema, the grant-target roles, auth.uid(), and a stub auth.users for
+// the new-user trigger to attach to. Everything the ERP used to borrow
+// from the mill list (the user_role enum, public.profiles / public.jobs,
+// my_role()/is_editor()/is_admin(), set_updated_at(), the new-user
+// trigger) is now created by migration 00000_public_baseline.sql, which
+// sorts first — so the chain builds those for real rather than stubbing
+// them, and this file no longer duplicates them.
+//
+// RLS is bypassed by the pglite superuser connection, so the real,
+// profiles-backed my_role() returning null here (auth.uid() is null)
+// does not affect the tested RPCs — the guards are only ever evaluated
+// inside policies, which the table owner skips. run.mjs sets auth.uid()
+// to a real admin profile before the section that needs one.
 const BOOTSTRAP = `
 create schema if not exists auth;
 
@@ -32,23 +44,12 @@ end $$;
 
 create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
 
--- Mill-list helpers the erp guard functions call. Returning admin/true
--- means RLS is not what these tests are checking.
-create or replace function public.my_role()   returns text    language sql stable as $$ select 'admin'::text $$;
-create or replace function public.is_admin()  returns boolean language sql stable as $$ select true $$;
-create or replace function public.is_editor() returns boolean language sql stable as $$ select true $$;
-
-create or replace function public.set_updated_at() returns trigger language plpgsql as $$
-begin new.updated_at = now(); return new; end $$;
-
--- Mill-list tables the erp schema soft-references by plain uuid.
-create table if not exists public.profiles (
+-- Supabase's auth.users. Stub shape only — enough for 00000's new-user
+-- trigger to attach and for the columns that trigger reads to exist.
+create table if not exists auth.users (
   id uuid primary key default gen_random_uuid(),
-  role text not null default 'admin'
-);
-create table if not exists public.jobs (
-  id uuid primary key default gen_random_uuid(),
-  name text not null default ''
+  email text,
+  raw_user_meta_data jsonb not null default '{}'::jsonb
 );
 `;
 
