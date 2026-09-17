@@ -83,6 +83,78 @@ export default async function EditAssemblyPage({ params }: { params: { id: strin
   }
   if (!assemblyRes.data) notFound();
 
+  // The option lists above are the *pickable* catalog: active, non-deleted,
+  // and capped by PostgREST's default row limit. But a BOM line can point at
+  // a material or sub-assembly that has since been deactivated, soft-deleted,
+  // or simply falls beyond that cap in a large catalog — and those lines must
+  // still render with their name/SKU/cost. Load exactly the records this
+  // assembly's components reference and merge in any the option lists miss.
+  const components = componentsRes.data ?? [];
+  const laborLines = laborRes.data ?? [];
+  const materials = materialsRes.data ?? [];
+  const assemblies = assembliesRes.data ?? [];
+  const laborTypes = laborTypesRes.data ?? [];
+
+  const knownMaterialIds = new Set(materials.map((m) => m.id));
+  const missingMaterialIds = [
+    ...new Set(
+      components
+        .map((c) => c.material_id)
+        .filter((id): id is string => Boolean(id) && !knownMaterialIds.has(id!))
+    ),
+  ];
+
+  const knownAssemblyIds = new Set(assemblies.map((a) => a.assembly_id));
+  const missingAssemblyIds = [
+    ...new Set(
+      components
+        .map((c) => c.child_assembly_id)
+        .filter((id): id is string => Boolean(id) && !knownAssemblyIds.has(id!))
+    ),
+  ];
+
+  // Labor lines are even more sensitive: the form groups them by their
+  // type's category, so a line whose labor type is missing from the list
+  // is dropped from every group and never rendered at all.
+  const knownLaborTypeIds = new Set(laborTypes.map((t) => t.id));
+  const missingLaborTypeIds = [
+    ...new Set(laborLines.map((l) => l.labor_type_id).filter((id) => !knownLaborTypeIds.has(id))),
+  ];
+
+  const [referencedMaterialsRes, referencedAssembliesRes, referencedLaborTypesRes] = await Promise.all([
+    missingMaterialIds.length
+      ? erp
+          .from("materials")
+          .select("id, sku, name, category, default_unit_cost, unit_of_measure")
+          .in("id", missingMaterialIds)
+          .returns<MaterialOption[]>()
+      : Promise.resolve({ data: [] as MaterialOption[], error: null }),
+    missingAssemblyIds.length
+      ? erp
+          .from("assembly_costs")
+          .select("assembly_id, name, assembly_number, is_fixture, material_cost, labor_cost, labor_hours")
+          .in("assembly_id", missingAssemblyIds)
+          .returns<AssemblyOption[]>()
+      : Promise.resolve({ data: [] as AssemblyOption[], error: null }),
+    missingLaborTypeIds.length
+      ? erp
+          .from("labor_types")
+          .select("id, category, name, rate")
+          .in("id", missingLaborTypeIds)
+          .returns<LaborTypeOption[]>()
+      : Promise.resolve({ data: [] as LaborTypeOption[], error: null }),
+  ]);
+
+  const referenceError =
+    referencedMaterialsRes.error || referencedAssembliesRes.error || referencedLaborTypesRes.error;
+  if (referenceError) {
+    return <p className="text-sm text-status-hold">Couldn&apos;t load assembly: {referenceError.message}</p>;
+  }
+
+  const allMaterials = [...materials, ...(referencedMaterialsRes.data ?? [])];
+  const allAssemblies = [...assemblies, ...(referencedAssembliesRes.data ?? [])];
+  const allLaborTypes = [...laborTypes, ...(referencedLaborTypesRes.data ?? [])];
+
   return (
     <div>
       <div className="mb-4">
@@ -93,12 +165,12 @@ export default async function EditAssemblyPage({ params }: { params: { id: strin
       </div>
       <AssemblyForm
         assembly={assemblyRes.data}
-        components={componentsRes.data ?? []}
-        labor={laborRes.data ?? []}
-        materials={materialsRes.data ?? []}
-        assemblies={assembliesRes.data ?? []}
+        components={components}
+        labor={laborLines}
+        materials={allMaterials}
+        assemblies={allAssemblies}
         programs={programsRes.data ?? []}
-        laborTypes={laborTypesRes.data ?? []}
+        laborTypes={allLaborTypes}
       />
     </div>
   );
