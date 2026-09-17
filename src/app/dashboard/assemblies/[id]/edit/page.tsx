@@ -90,8 +90,10 @@ export default async function EditAssemblyPage({ params }: { params: { id: strin
   // still render with their name/SKU/cost. Load exactly the records this
   // assembly's components reference and merge in any the option lists miss.
   const components = componentsRes.data ?? [];
+  const laborLines = laborRes.data ?? [];
   const materials = materialsRes.data ?? [];
   const assemblies = assembliesRes.data ?? [];
+  const laborTypes = laborTypesRes.data ?? [];
 
   const knownMaterialIds = new Set(materials.map((m) => m.id));
   const missingMaterialIds = [
@@ -111,7 +113,15 @@ export default async function EditAssemblyPage({ params }: { params: { id: strin
     ),
   ];
 
-  const [referencedMaterialsRes, referencedAssembliesRes] = await Promise.all([
+  // Labor lines are even more sensitive: the form groups them by their
+  // type's category, so a line whose labor type is missing from the list
+  // is dropped from every group and never rendered at all.
+  const knownLaborTypeIds = new Set(laborTypes.map((t) => t.id));
+  const missingLaborTypeIds = [
+    ...new Set(laborLines.map((l) => l.labor_type_id).filter((id) => !knownLaborTypeIds.has(id))),
+  ];
+
+  const [referencedMaterialsRes, referencedAssembliesRes, referencedLaborTypesRes] = await Promise.all([
     missingMaterialIds.length
       ? erp
           .from("materials")
@@ -126,15 +136,24 @@ export default async function EditAssemblyPage({ params }: { params: { id: strin
           .in("assembly_id", missingAssemblyIds)
           .returns<AssemblyOption[]>()
       : Promise.resolve({ data: [] as AssemblyOption[], error: null }),
+    missingLaborTypeIds.length
+      ? erp
+          .from("labor_types")
+          .select("id, category, name, rate")
+          .in("id", missingLaborTypeIds)
+          .returns<LaborTypeOption[]>()
+      : Promise.resolve({ data: [] as LaborTypeOption[], error: null }),
   ]);
 
-  const referenceError = referencedMaterialsRes.error || referencedAssembliesRes.error;
+  const referenceError =
+    referencedMaterialsRes.error || referencedAssembliesRes.error || referencedLaborTypesRes.error;
   if (referenceError) {
     return <p className="text-sm text-status-hold">Couldn&apos;t load assembly: {referenceError.message}</p>;
   }
 
   const allMaterials = [...materials, ...(referencedMaterialsRes.data ?? [])];
   const allAssemblies = [...assemblies, ...(referencedAssembliesRes.data ?? [])];
+  const allLaborTypes = [...laborTypes, ...(referencedLaborTypesRes.data ?? [])];
 
   return (
     <div>
@@ -147,11 +166,11 @@ export default async function EditAssemblyPage({ params }: { params: { id: strin
       <AssemblyForm
         assembly={assemblyRes.data}
         components={components}
-        labor={laborRes.data ?? []}
+        labor={laborLines}
         materials={allMaterials}
         assemblies={allAssemblies}
         programs={programsRes.data ?? []}
-        laborTypes={laborTypesRes.data ?? []}
+        laborTypes={allLaborTypes}
       />
     </div>
   );
