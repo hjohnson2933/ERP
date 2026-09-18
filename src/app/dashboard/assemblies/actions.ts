@@ -37,6 +37,56 @@ export interface AssemblyInput {
 
 export type SaveResult = { ok: true; id: string } | { ok: false; error: string };
 
+// Shape returned by searchMaterials — mirrors AssemblyForm's MaterialOption.
+export interface MaterialSearchResult {
+  id: string;
+  sku: string;
+  name: string;
+  category: string;
+  default_unit_cost: number | null;
+  unit_of_measure: string;
+}
+
+// Server-side "add a part" search. The edit page can only preload the first
+// ~1000 materials (PostgREST's default cap), so a large catalog isn't fully
+// searchable from an in-memory list. This queries the whole materials table
+// on each keystroke instead, keeping the same active/non-deleted scope and
+// case-insensitive name/SKU substring match the client filter used.
+export async function searchMaterials(query: string): Promise<MaterialSearchResult[]> {
+  const q = query.trim();
+  if (!q) return [];
+
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single<Pick<Profile, "role">>();
+  if (!canManageCatalog(profile?.role)) return [];
+
+  // Escape PostgREST/ILIKE wildcards so a literal % or _ in the query is
+  // matched as text, and comma so it can't split the .or() filter.
+  const escaped = q.replace(/[%_,]/g, (ch) => `\\${ch}`);
+  const pattern = `%${escaped}%`;
+
+  const erp = await erpSchema();
+  const { data, error } = await erp
+    .from("materials")
+    .select("id, sku, name, category, default_unit_cost, unit_of_measure")
+    .is("deleted_at", null)
+    .eq("active", true)
+    .or(`name.ilike.${pattern},sku.ilike.${pattern}`)
+    .order("name", { ascending: true })
+    .limit(20)
+    .returns<MaterialSearchResult[]>();
+
+  if (error) return [];
+  return data ?? [];
+}
+
 export async function saveAssembly(input: AssemblyInput): Promise<SaveResult> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();

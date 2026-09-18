@@ -1,8 +1,8 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { saveAssembly } from "@/app/dashboard/assemblies/actions";
+import { saveAssembly, searchMaterials } from "@/app/dashboard/assemblies/actions";
 import {
   LABOR_CATEGORY_LABELS,
   type Assembly,
@@ -159,6 +159,8 @@ export function AssemblyForm({
   );
 
   const [partSearch, setPartSearch] = useState("");
+  const [partMatches, setPartMatches] = useState<MaterialOption[]>([]);
+  const [partSearching, setPartSearching] = useState(false);
   const [subSearch, setSubSearch] = useState("");
   const [addCategory, setAddCategory] = useState<LaborCategory>("general");
   const [addTypeId, setAddTypeId] = useState("");
@@ -241,13 +243,30 @@ export function AssemblyForm({
     setAddTypeId("");
   };
 
-  const partMatches = useMemo(() => {
-    const q = partSearch.trim().toLowerCase();
-    if (!q) return [];
-    return materials
-      .filter((m) => m.name.toLowerCase().includes(q) || m.sku.toLowerCase().includes(q))
-      .slice(0, 8);
-  }, [partSearch, materials]);
+  // "Add a part" search runs server-side so the whole materials table is
+  // searchable — the preloaded `materials` list is capped at ~1000 rows and
+  // is only used to label existing BOM lines. Debounced, with a request
+  // counter so a slow response can't overwrite a newer query's results.
+  const partSearchSeq = useRef(0);
+  useEffect(() => {
+    const q = partSearch.trim();
+    if (!q) {
+      setPartMatches([]);
+      setPartSearching(false);
+      return;
+    }
+    setPartSearching(true);
+    const seq = ++partSearchSeq.current;
+    const handle = setTimeout(async () => {
+      try {
+        const results = await searchMaterials(q);
+        if (seq === partSearchSeq.current) setPartMatches(results);
+      } finally {
+        if (seq === partSearchSeq.current) setPartSearching(false);
+      }
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [partSearch]);
 
   const subMatches = useMemo(() => {
     const q = subSearch.trim().toLowerCase();
@@ -435,7 +454,7 @@ export function AssemblyForm({
               onChange={(e) => setPartSearch(e.target.value)}
               placeholder="Add a part — search materials by name or SKU…"
             />
-            {partMatches.length > 0 && (
+            {partSearch.trim() !== "" && (
               <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded border border-ink-border bg-white shadow-lg">
                 {partMatches.map((m) => (
                   <li key={m.id}>
@@ -454,6 +473,11 @@ export function AssemblyForm({
                     </button>
                   </li>
                 ))}
+                {partMatches.length === 0 && (
+                  <li className="px-3 py-2 text-sm text-ink-muted">
+                    {partSearching ? "Searching…" : "No active materials match."}
+                  </li>
+                )}
               </ul>
             )}
           </div>
